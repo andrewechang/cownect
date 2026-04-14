@@ -1,55 +1,52 @@
-# Prerequisites
-*.d
+#.gitignore
 
-# Object files
-*.o
-*.ko
-*.obj
+#Python (FastAPI)
+**pycache**/
+*.py[cod]
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+.env
+.venv/
+venv/
+ENV/
+env/
+
+
+#React (Front end)
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+#OS files
+.DS_Store
+Thumbs.db
+
+
+#VS Code files
+.vscode/
+.idea/
+
+# logs
+*.log
+
+
+#ESP32 files
+build/
+sdkconfig
+sdkconfig.old
+*.bin
 *.elf
 
-# Linker output
-*.ilk
-*.map
-*.exp
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
+#Misc
+*.swp
+*.bak
