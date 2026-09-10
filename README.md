@@ -1,7 +1,15 @@
-# cownect
-Firmware and application support for a cow health tracking collar
+# CowNect - IoT Cow Collar
 
-Team Members:
-Sergio Maciel (Research Assistant)
-Andrew Chang
-Peter Lin
+This GitHub repository is part of an engineering senior design project. <br>
+California State Polytechnic University, Pomona <br>
+Electrical & Computer Engineering Department <br>
+3801 W. Temple Ave. <br>
+Pomona, CA 91768 <br>
+
+## Contributors
+Advisor: Dr. Tamer Omar <br>
+Research Assistant: Sergio Maciel <br>
+
+Team Members: <br>
+Andrew Chang <br>
+Peter Lin <br>
