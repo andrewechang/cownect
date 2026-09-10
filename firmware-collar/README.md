@@ -1,0 +1,1 @@
+This folder is for the firmware that we create for our ESP32 on our custom PCB that we have created

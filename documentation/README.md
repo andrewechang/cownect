@@ -1,0 +1,1 @@
+This folder contains any documents that we make about our project, such as reports.

@@ -1,0 +1,1 @@
+This folder is for any documentation such as schematics and PCB notes

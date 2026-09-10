@@ -1,0 +1,1 @@
+This folder is for the firmware that we create for our ESP32 on a Heltec LoRa receiver that communicates with our Jetson Nano using USB Serial
