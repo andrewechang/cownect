@@ -1,0 +1,1 @@
+This folder contains code for PCB collars that were created in the 2026 Spring semester, using WiFi and Thingspeak for communication. It is being kept in this repository to allow for testing using previous hardware.
