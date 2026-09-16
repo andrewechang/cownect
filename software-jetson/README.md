@@ -1,1 +1,0 @@
-This folder is for code that allows us to receive data from the LoRa receiver, and upload it to the cloud. It also is for any machine learning that we may do on device
