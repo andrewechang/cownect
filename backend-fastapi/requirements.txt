@@ -1,5 +1,4 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-psycopg[binary]
-alembic
+fastapi #creates the API
+uvicorn[standard] #runs the API server
+sqlalchemy #communicate with the database
+psycopg[binary] #PostgreSQL database driver
