@@ -1,0 +1,3 @@
+## Pins the framework version for reproducible builds (project decision: ESP-IDF v5.5.5).
+dependencies:
+  idf: "==5.5.5"

@@ -1,0 +1,238 @@
+menu "CowNect collar configuration"
+
+    comment "Values marked DEVELOPMENT DEFAULT are non-production and NEEDS_HARDWARE_VALIDATION."
+    comment "Values left empty/0 are CONFIG_NOT_SET: dependent features refuse to run."
+
+    menu "Board / development defaults"
+        config COWNECT_DEVICE_ID
+            hex "Development device_id (DEVELOPMENT DEFAULT, not a provisioning scheme)"
+            default 0x00000001
+            help
+                Temporary development device identifier (Material 4 section 14).
+                Not a production provisioning scheme.
+
+        config COWNECT_PERIPH_STABILIZE_MS
+            int "SWITCHED_3V3 power-up stabilization delay ms (DEVELOPMENT DEFAULT, NEEDS_HARDWARE_VALIDATION)"
+            range 0 5000
+            default 100
+
+        config COWNECT_MODE_DEBOUNCE_MS
+            int "MODE_SW (GPIO15) debounce window ms (DEVELOPMENT DEFAULT, NEEDS_HARDWARE_VALIDATION)"
+            range 10 1000
+            default 50
+
+        config COWNECT_I2C_CLOCK_HZ
+            int "LIS2DW12 I2C clock Hz (design default, standard mode)"
+            range 10000 400000
+            default 100000
+    endmenu
+
+    menu "ADC (PROVISIONAL bring-up settings)"
+        choice COWNECT_ADC_ATTEN
+            prompt "ADC1 attenuation for ALL analog channels (PROVISIONAL, NEEDS_HARDWARE_VALIDATION)"
+            default COWNECT_ADC_ATTEN_DB_12
+            help
+                One common attenuation is used for the ADC1 continuous engine (Material 9) and
+                the one-shot temperature path (Material 6). Provisional bring-up value only.
+            config COWNECT_ADC_ATTEN_DB_0
+                bool "0 dB"
+            config COWNECT_ADC_ATTEN_DB_2_5
+                bool "2.5 dB"
+            config COWNECT_ADC_ATTEN_DB_6
+                bool "6 dB"
+            config COWNECT_ADC_ATTEN_DB_12
+                bool "12 dB (PROVISIONAL bring-up default)"
+        endchoice
+
+        config COWNECT_ADC_CONV_FRAME_BYTES
+            int "ADC continuous conversion frame bytes (DEVELOPMENT DEFAULT, NEEDS_HARDWARE_VALIDATION)"
+            range 64 4092
+            default 1024
+            help
+                Must be a multiple of 4 (ESP32-S3 conversion result size).
+
+        config COWNECT_ADC_POOL_BYTES
+            int "ADC continuous driver pool bytes (DEVELOPMENT DEFAULT, NEEDS_HARDWARE_VALIDATION)"
+            range 1024 65536
+            default 16384
+
+        config COWNECT_ADC_NEAR_RAIL_MARGIN_CODES
+            int "Near-rail margin in raw codes (0 = only exact rail codes, NEEDS_HARDWARE_VALIDATION)"
+            range 0 512
+            default 0
+
+        config COWNECT_TEMP_ONESHOT_AVERAGE_COUNT
+            int "One-shot temperature conversions averaged per logical sample (1 = single conversion)"
+            range 1 64
+            default 1
+
+        config COWNECT_COW_OPEN_THRESHOLD_MV
+            int "Cow thermistor OPEN-suspected node threshold mV (0 = CONFIG_NOT_SET, rail/math checks only)"
+            range 0 3300
+            default 0
+
+        config COWNECT_COW_SHORT_THRESHOLD_MV
+            int "Cow thermistor SHORT-suspected node threshold mV (0 = CONFIG_NOT_SET, rail/math checks only)"
+            range 0 3300
+            default 0
+    endmenu
+
+    menu "GPS"
+        config COWNECT_GPS_UART_PORT
+            int "ESP32 UART controller for GPS (design decision; UART0 is reserved for backup debug)"
+            range 1 2
+            default 2
+
+        config COWNECT_GPS_MAX_SENTENCE_BYTES
+            int "Maximum NMEA sentence bytes (design default, confirm with sentence discovery test)"
+            range 82 256
+            default 128
+    endmenu
+
+    menu "Communication"
+        choice COWNECT_COMM_MODE
+            prompt "Communication performed by the scheduler after capture"
+            default COWNECT_COMM_MODE_DISABLED
+            config COWNECT_COMM_MODE_DISABLED
+                bool "Disabled (no RF / network values configured yet)"
+            config COWNECT_COMM_MODE_LORA_FULL
+                bool "LORA_FULL (Material 13)"
+            config COWNECT_COMM_MODE_HYBRID
+                bool "HYBRID_LORA_WIFI (Material 15)"
+        endchoice
+
+        config COWNECT_HYBRID_ENABLE_LORA_TELEMETRY
+            bool "Hybrid: send LoRa telemetry"
+            default y
+
+        config COWNECT_HYBRID_ENABLE_WIFI_UPLOAD
+            bool "Hybrid: upload raw capture over Wi-Fi TCP"
+            default y
+    endmenu
+
+    menu "LoRa RF profile (CONFIG_NOT_SET until validated - leave empty to keep TX blocked)"
+        comment "Collar and Heltec gateway must use identical values."
+
+        config COWNECT_LORA_ANTENNA_VERIFIED
+            bool "I confirm the external antenna is connected to the Ra-01SH before RF TX"
+            default n
+            help
+                Operator confirmation, not a hardware defect flag: the board uses an external
+                antenna. RF transmission is refused unless this is enabled (and the RF profile is
+                complete). Never transmit the Ra-01SH without its external antenna connected.
+
+        config COWNECT_LORA_FREQUENCY_HZ
+            string "Carrier frequency Hz"
+            default ""
+        config COWNECT_LORA_BANDWIDTH_HZ
+            string "Bandwidth Hz (7810,10420,15630,20830,31250,41670,62500,125000,250000,500000)"
+            default ""
+        config COWNECT_LORA_SPREADING_FACTOR
+            string "Spreading factor (5-12)"
+            default ""
+        config COWNECT_LORA_CODING_RATE
+            string "Coding rate denominator (5-8 for 4/5..4/8)"
+            default ""
+        config COWNECT_LORA_PREAMBLE_SYMBOLS
+            string "Preamble symbols"
+            default ""
+        config COWNECT_LORA_SYNC_WORD
+            string "LoRa sync word (e.g. 0x12)"
+            default ""
+        config COWNECT_LORA_CRC_ENABLED
+            string "Payload CRC enabled (0/1)"
+            default ""
+        config COWNECT_LORA_INVERT_IQ
+            string "Invert IQ (0/1)"
+            default ""
+        config COWNECT_LORA_TX_POWER_DBM
+            string "TX power dBm (-9..22)"
+            default ""
+        config COWNECT_LORA_PA_DUTY_CYCLE
+            string "SetPaConfig paDutyCycle (per SX1262 datasheet table for chosen power)"
+            default ""
+        config COWNECT_LORA_PA_HP_MAX
+            string "SetPaConfig hpMax (per SX1262 datasheet table for chosen power)"
+            default ""
+        config COWNECT_LORA_RAMP_TIME_US
+            string "PA ramp time us (10,20,40,80,200,800,1700,3400)"
+            default ""
+        config COWNECT_LORA_REGULATOR_MODE
+            string "Regulator mode (LDO or DCDC)"
+            default ""
+        config COWNECT_LORA_TCXO
+            string "TCXO via DIO3: NONE or voltage (1.6,1.7,1.8,2.2,2.4,2.7,3.0,3.3)"
+            default ""
+        config COWNECT_LORA_TCXO_STARTUP_US
+            string "TCXO startup timeout us (only when TCXO is not NONE)"
+            default ""
+        config COWNECT_LORA_DIO2_RF_SWITCH
+            string "Use DIO2 as RF switch control (0/1)"
+            default ""
+        config COWNECT_LORA_TX_TIMEOUT_MS
+            string "TX operation timeout ms"
+            default ""
+        config COWNECT_LORA_RX_TIMEOUT_MS
+            string "Default RX window timeout ms"
+            default ""
+        config COWNECT_LORA_SPI_CLOCK_HZ
+            int "SPI clock Hz (design default, conservative, module max 10 MHz)"
+            range 100000 10000000
+            default 1000000
+        config COWNECT_LORA_BUSY_TIMEOUT_MS
+            int "BUSY wait safety bound ms (DEVELOPMENT DEFAULT, NEEDS_HARDWARE_VALIDATION)"
+            range 1 5000
+            default 100
+    endmenu
+
+    menu "LORA_FULL transfer (Material 13)"
+        config COWNECT_LORA_FULL_FRAGMENT_PAYLOAD_BYTES
+            string "Fragment payload bytes (CONFIG_NOT_SET until validated)"
+            default ""
+        config COWNECT_LORA_FULL_STREAM_CRC32
+            bool "Include stream CRC32 in fragment headers"
+            default y
+        config COWNECT_LORA_FULL_ACK_ENABLED
+            bool "Stop-and-wait ACK mode (baseline A is send-once)"
+            default n
+        config COWNECT_LORA_FULL_ACK_TIMEOUT_MS
+            string "ACK timeout ms (CONFIG_NOT_SET)"
+            default ""
+        config COWNECT_LORA_FULL_MAX_RETRIES
+            string "Max retries per fragment (CONFIG_NOT_SET)"
+            default ""
+    endmenu
+
+    menu "Prototype Wi-Fi / Jetson (Material 14 Rev B, CONFIG_NOT_SET until supplied)"
+        config COWNECT_WIFI_SSID
+            string "Wi-Fi SSID"
+            default ""
+        config COWNECT_WIFI_PASSWORD
+            string "Wi-Fi password (never logged)"
+            default ""
+        config COWNECT_JETSON_IP
+            string "Jetson IPv4 address"
+            default ""
+        config COWNECT_JETSON_PORT
+            int "Jetson raw-upload TCP port (0 = CONFIG_NOT_SET)"
+            range 0 65535
+            default 0
+        config COWNECT_WIFI_CONNECT_TIMEOUT_MS
+            int "Wi-Fi connect timeout ms (0 = CONFIG_NOT_SET)"
+            range 0 600000
+            default 0
+        config COWNECT_TCP_CONNECT_TIMEOUT_MS
+            int "TCP connect timeout ms (0 = CONFIG_NOT_SET)"
+            range 0 600000
+            default 0
+        config COWNECT_SOCKET_WRITE_TIMEOUT_MS
+            int "Socket write timeout ms (0 = CONFIG_NOT_SET)"
+            range 0 600000
+            default 0
+        config COWNECT_UPLOAD_CHUNK_BYTES
+            int "Upload chunk bytes (design default)"
+            range 256 16384
+            default 4096
+    endmenu
+
+endmenu
