@@ -8,7 +8,7 @@ are separate projects and are not part of this repository.
 
 ```
 idf.py set-target esp32s3
-idf.py menuconfig      # "CowNect collar configuration"
+idf.py menuconfig      # Component config -> "CowNect collar configuration"
 idf.py build
 idf.py -p <port> flash monitor
 ```
@@ -133,4 +133,5 @@ components/power                      PowerManager, SleepManager (M10)
 components/scheduler                  CycleScheduler, CycleMetrics (M10)
 components/devtest                    bring-up tests (bringup_tests.h, one file per Material) + console
 docs/protocols.md                     byte formats for gateway / Jetson
+docs/SYSTEM_OVERVIEW.md               high-level explanation of how the firmware works
 ```

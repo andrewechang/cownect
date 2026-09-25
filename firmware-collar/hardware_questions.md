@@ -51,9 +51,9 @@ NEEDS_HARDWARE_VALIDATION, RESOLVED.
 | 26 | Ra-01SH frequency band: datasheet lists 803-930 MHz and 410-525 MHz | OPEN (documentation conflict) | Confirm module marking/variant. |
 | 27 | Heltec WiFi LoRa 32 V3 purchased band variant | OPEN | Must match the Ra-01SH band. |
 | 28 | RF profile: frequency, bandwidth, SF, CR, preamble, sync word, CRC, IQ, TX power, PA duty/hpMax, ramp | CONFIG_NOT_SET | menuconfig strings, all empty. Legal regional channel must be selected. |
-| 29 | Oscillator: TCXO on DIO3 (voltage/startup) or crystal | CONFIG_NOT_SET | DIO3 is not wired to the ESP32; whether the module uses it internally is unknown. `CONFIG_COWNECT_LORA_TCXO` must be `NONE` or a voltage. |
-| 30 | RF switch: DIO2 control and TXEN/RXEN left unconnected | CONFIG_NOT_SET / NEEDS_HARDWARE_VALIDATION | Material 12 section 13: if SPI works but RF does not, investigate TXEN/RXEN (possible hardware revision). |
-| 31 | SX1262 regulator mode (LDO / DC-DC) | CONFIG_NOT_SET | Depends on the module's DC-DC inductor fitting. |
+| 29 | Oscillator: TCXO on DIO3 (voltage/startup) or crystal | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): passive crystal Y1 (CY3225) on XTA/XTB, DIO3 does not power a TCXO. `CONFIG_COWNECT_LORA_TCXO="NONE"`. Regulator: 15 uH L6 fitted on DCC_SW, so `CONFIG_COWNECT_LORA_REGULATOR_MODE="DCDC"` (LDO also valid). |
+| 30 | RF switch: DIO2 control and TXEN/RXEN left unconnected | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): DIO2 drives RF switch U2 via R8 (0R) and the TX_EN net (DIO2=1 TX, DIO2=0 RX); module TXEN pin is the same net and the RXEN resistor R1 is NC. Leaving TXEN/RXEN unconnected on the PCB is correct when `CONFIG_COWNECT_LORA_DIO2_RF_SWITCH="1"`. The datasheet application circuit (p.12) also leaves them unconnected. |
+| 31 | SX1262 regulator mode (LDO / DC-DC) | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): 15 uH L6 fitted on DCC_SW, so `CONFIG_COWNECT_LORA_REGULATOR_MODE="DCDC"` (LDO also valid). |
 | 32 | TX / RX operation timeouts | CONFIG_NOT_SET | TX is refused without a TX timeout. |
 | 33 | BUSY wait safety bound | DEVELOPMENT DEFAULT 100 ms / NEEDS_HARDWARE_VALIDATION | Bounds every SPI command; not an RF parameter. |
 | 34 | SPI clock | Design default 1 MHz (module max 10 MHz) | `CONFIG_COWNECT_LORA_SPI_CLOCK_HZ`. |
