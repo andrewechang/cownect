@@ -1,0 +1,324 @@
+==========================================================================================
+                                 COWNECT COLLAR FIRMWARE                                  
+                                  System Overview Report                                  
+==========================================================================================
+Firmware version: 0.1.0-proto
+Platform: ESP32-S3-WROOM-1-N16R8, ESP-IDF v5.5.5, C++
+Date: 24 September 2026
+Status: PROTOTYPE - builds successfully, NOT YET TESTED ON HARDWARE
+==========================================================================================
+
+CONTENTS
+
+  1. Executive Summary
+  2. System Operation
+  3. Hardware Overview
+  4. Software Architecture
+  5. Start-up and Operating Modes
+  6. Sensor Capture
+  7. Data Processing and Communication
+  8. Power Management and Timing
+  9. Current Status and Open Items
+  10. Bring-up Procedure
+
+==========================================================================================
+1. EXECUTIVE SUMMARY
+==========================================================================================
+
+This report explains how the CowNect collar firmware is structured and how it is designed
+to work. It is written for team members who need an overall understanding of the system
+without reading the source code.
+
+The collar is a battery-powered sensor node worn by a cow. Every 120 seconds it records
+its sensors for 30 seconds, summarises the recording, sends data to the receiving side
+(LoRa gateway and/or Jetson over Wi-Fi), and then deep-sleeps until the next cycle.
+
+  ! *** PROTOTYPE STATUS. *** The firmware compiles cleanly with ESP-IDF v5.5.5, but it
+    has not yet run on the physical collar PCB. Everything in this report describes the
+    intended design. Timings, thresholds and radio behaviour still require hardware
+    validation, and several network and radio settings have deliberately not been
+    configured yet (Section 9).
+
+Related documents: README.md (build steps and test list), BUILD_AND_VALIDATION_REPORT.md
+(test results), docs/protocols.md (byte-level packet formats), hardware_questions.md (open
+hardware questions).
+
+==========================================================================================
+2. SYSTEM OPERATION
+==========================================================================================
+
+The collar repeats a fixed 120-second cycle:
+
+Step | Phase          | What happens
+-----+----------------+-------------------------------------------------------------------
+1    | Power on       | Switch on the sensor power rail and wait for it to stabilise.
+2    | Capture (30 s) | Record accelerometer, GPS, microphone, board temperature and cow
+     |                | temperature at the same time.
+3    | Features       | Reduce the recording to a small telemetry summary (averages, RMS,
+     |                | position, temperatures, health flags).
+4    | Communicate    | Send the summary and/or the full raw recording, depending on the
+     |                | configured communication mode.
+5    | Power off      | Switch off the sensor power rail.
+6    | Deep sleep     | Sleep for whatever remains of the 120 s cycle, then start again.
+
+  Table 1. The 120-second collar cycle
+
+On the receiving side, a Heltec LoRa gateway (Material 16) and a Jetson receiver (Material
+17) decode the data. Both are separate projects and are not part of this firmware.
+
+==========================================================================================
+3. HARDWARE OVERVIEW
+==========================================================================================
+
+Block             | Part                      | Interface      | ESP32-S3 pins
+------------------+---------------------------+----------------+--------------------------
+MCU               | ESP32-S3-WROOM-1-N16R8    | -              | -
+                  | (16 MB flash, 8 MB PSRAM) |                |
+Accelerometer     | LIS2DW12 (50 Hz, ±4 g)    | I2C, addr 0x18 | SDA 6, SCL 7
+GPS               | ATGM336H (9600 baud, 1    | UART           | RX 17, TX 18
+                  | Hz)                       |                |
+Microphone        | Analog microphone +       | ADC1           | GPIO 5
+                  | MCP6001 amplifier         |                |
+Board temperature | MCP9700                   | ADC1           | GPIO 1
+Cow temperature   | MF58 10 kΩ NTC thermistor | ADC1           | GPIO 2
+                  | (divider)                 |                |
+LoRa radio        | Ra-01SH (SX1262),         | SPI            | CS 9, MOSI 10, SCK 11,
+                  | external antenna          |                | MISO 12, RST 13, DIO1 14,
+                  |                           |                | BUSY 21
+Sensor power rail | TPS22919 load switch      | GPIO           | PERIPH_EN 4
+                  | (SWITCHED_3V3)            |                |
+Mode switch       | PROG switch               | GPIO           | 15 (LOW = programming,
+                  |                           |                | HIGH = normal)
+
+  Table 2. Hardware blocks and pin assignment
+
+All pin numbers are defined in one file, components/board/include/board_pins.h. No other
+file hard-codes a GPIO number.
+
+==========================================================================================
+4. SOFTWARE ARCHITECTURE
+==========================================================================================
+
+The firmware is written in C++ on ESP-IDF and is divided into components. Each layer only
+calls the layers below it.
+
+Layer         | Components                          | Responsibility
+--------------+-------------------------------------+-------------------------------------
+Entry         | main/app_main.cpp, cownect_app      | Bring-up checklist and the final
+              |                                     | firmware entry point
+              |                                     | run_cownect_firmware().
+Control       | scheduler, power                    | Runs the 120 s cycle; switches the
+              |                                     | sensor rail; enters deep sleep.
+Work          | sensor_manager, features,           | Runs the 30 s capture; computes the
+              | communication                       | telemetry summary; sends data
+              |                                     | (comm_manager, lora_full, hybrid,
+              |                                     | wifi_link, tcp_client, wifi_upload).
+Data          | data, capture_stream                | Holds the capture in memory
+              |                                     | (CaptureSession), keeps counters
+              |                                     | across deep sleep, and serialises
+              |                                     | the capture with CRC32.
+Drivers       | accelerometer, gps, temperature,    | Talk to individual chips. analog_adc
+              | microphone, analog_adc, lora_radio  | is the shared continuous ADC engine;
+              |                                     | lora_radio wraps the SX1262.
+Board         | board                               | Pins, mode switch, PERIPH_EN, I2C
+              |                                     | bus, ADC1 ownership and calibration,
+              |                                     | PSRAM check.
+Configuration | cn_config                           | menuconfig options and central
+              |                                     | constants, used by all layers.
+Test          | devtest                             | Bring-up tests and development
+              |                                     | console; uses the real production
+              |                                     | code.
+
+  Table 3. Software layers (top to bottom)
+
+4.1 Design rules
+----------------
+  - One owner per resource: the board layer owns ADC1, the I2C bus and the power-enable
+    pin. Drivers request access from it and never configure these directly.
+  - One set of constants: timing, sample rates and buffer sizes live in cn_config. Tunable
+    values appear in idf.py menuconfig under "CowNect collar configuration".
+  - Tests use production code: bring-up tests and console commands call the same drivers
+    and managers as the real firmware. There are no separate test drivers.
+  - No guessed values: any value that must come from the hardware or the network is left
+    as CONFIG_NOT_SET. The feature that needs it refuses to run and reports BLOCKED
+    instead of running on a guess.
+
+==========================================================================================
+5. START-UP AND OPERATING MODES
+==========================================================================================
+
+main/app_main.cpp is a bring-up checklist rather than the final program. By default it
+only performs a safe base initialisation with the sensor rail commanded OFF, prints a
+summary and idles. During PCB bring-up, tests are enabled one at a time (Materials 4 to
+15). The last line, run_cownect_firmware(), starts the real firmware.
+
+When the real firmware starts, it reads the PROG switch (GPIO 15, debounced):
+
+Mode                     | Behaviour
+-------------------------+----------------------------------------------------------------
+PROGRAMMING (switch LOW) | Development console on the serial port. Nothing starts
+                         | automatically; the operator types "test ..." commands.
+NORMAL (switch HIGH)     | The 120 s production cycle starts automatically and repeats
+                         | through deep sleep.
+UNSTABLE (not settled)   | Stays awake and re-checks. Never enters deep sleep, so a
+                         | floating switch cannot lock the device out.
+
+  Table 4. Operating modes
+
+==========================================================================================
+6. SENSOR CAPTURE
+==========================================================================================
+
+The SensorManager runs one 30-second capture and stores all results in a single
+CaptureSession.
+
+Sensor            | Rate            | Samples in 30 s    | How it is read
+------------------+-----------------+--------------------+--------------------------------
+Accelerometer     | 50 Hz           | ~1,500             | LIS2DW12 FIFO, polled every 100
+                  |                 |                    | ms over I2C
+GPS               | 1 Hz            | up to 40 fixes     | UART NMEA stream, parsed in
+                  |                 |                    | firmware
+Microphone        | 32 kHz, 12-bit  | ~960,000 (~1.9 MB) | Continuous ADC with DMA, stored
+                  |                 |                    | in PSRAM
+Board temperature | 1 Hz (reported) | ~30                | Shared continuous ADC, averaged
+                  |                 |                    | into 1 s values
+Cow temperature   | 1 Hz (reported) | ~30                | Shared continuous ADC, averaged
+                  |                 |                    | into 1 s values
+
+  Table 5. Sensor capture rates
+
+6.1 Shared ADC
+--------------
+The microphone and both temperature inputs are all on ADC1. One continuous ADC engine
+therefore samples at 64,000 conversions per second in the repeating pattern MIC,
+BOARD_TEMP, MIC, COW_TEMP. The microphone receives 32 kHz; the temperature channels are
+averaged into one reading per second and then converted with the normal temperature code
+(MCP9700 linear formula, NTC Beta formula). Readings use the ESP-IDF calibration driver.
+The 12 dB attenuation setting is a provisional bring-up value.
+
+6.2 Health tracking
+-------------------
+Each sensor records its own status: OK, degraded (for example FIFO or DMA overflow, or no
+GPS fix) or failed. A capture can complete with some sensors degraded; the status flags
+travel with the data so the receiver knows how far to trust each part.
+
+6.3 Identity and time
+---------------------
+Each capture carries a device_id (currently the development default 0x00000001) and an
+incrementing capture_id. The capture_id is stored in RTC memory, so it survives deep sleep
+but not a full power loss. Timestamps are monotonic microseconds since boot; no real clock
+time is used because no absolute time source has been configured.
+
+==========================================================================================
+7. DATA PROCESSING AND COMMUNICATION
+==========================================================================================
+
+7.1 Telemetry summary (Material 11)
+-----------------------------------
+SimpleFeatureProcessor reduces the capture to a TelemetryRecord containing: the last valid
+GPS position, mean board and cow temperature, accelerometer magnitude mean/RMS/min/max,
+microphone mean and AC RMS, and status flags such as GPS_NO_VALID_FIX, COW_PROBE_FAULT and
+CYCLE_OVERRUN.
+
+7.2 Serialisation (Material 13)
+-------------------------------
+To send the full raw capture, the capture_stream component encodes it as "capture stream
+v1": a 68-byte header followed by six typed sections (accelerometer, GPS, board
+temperature, cow temperature, microphone, diagnostics). All fields are explicit little-
+endian; no raw C structure is ever transmitted. The whole stream is protected by CRC-32
+(zlib variant). Data is encoded directly from the capture buffers while it is being sent,
+so no second full-size copy is held in memory.
+
+7.3 Communication modes
+-----------------------
+Mode                       | What is sent                  | Path
+---------------------------+-------------------------------+------------------------------
+Disabled (current default) | Nothing                       | -
+LORA_FULL                  | The entire capture stream     | LoRa, split into fragments;
+                           |                               | stop-and-wait with
+                           |                               | acknowledgement and retry per
+                           |                               | fragment
+HYBRID_LORA_WIFI           | 1. 49-byte telemetry packet;  | 1. LoRa to the Heltec
+                           | 2. Entire capture stream      | gateway; 2. Wi-Fi TCP to the
+                           |                               | Jetson
+
+  Table 6. Communication modes (selected in menuconfig)
+
+The hybrid mode is the intended main path: the small summary goes over long-range LoRa,
+and the large raw recording (about 2 MB, mostly microphone data) goes over Wi-Fi.
+LORA_FULL exists to test whether full transfers over LoRa alone are practical; because of
+LoRa data rates it is expected to take much longer than the 120 s cycle.
+
+7.4 LoRa radio
+--------------
+The SX1262 radio uses a pinned copy of Semtech's official sx126x_driver, wrapped behind
+the project's own HAL and adapter (ILoraRadio). The rest of the firmware never talks to
+the chip directly. Every radio operation has a timeout, so a stuck radio cannot hang the
+cycle.
+
+  ! *** RF SAFETY. *** The firmware refuses to transmit until the complete RF profile has
+    been configured and the operator has set COWNECT_LORA_ANTENNA_VERIFIED to confirm that
+    the external antenna is attached. Transmitting without an antenna can damage the
+    radio.
+
+==========================================================================================
+8. POWER MANAGEMENT AND TIMING
+==========================================================================================
+
+  - PowerManager switches the peripheral rail (SWITCHED_3V3) and, after switching it on,
+    waits a fixed stabilisation delay (development default 100 ms).
+  - The rail stays on during communication while LoRa needs it. In hybrid mode it can be
+    switched off before the Wi-Fi upload, because Wi-Fi is inside the ESP32-S3.
+  - SleepManager uses timer-only deep sleep. It measures how long the device has been
+    awake and sleeps for the remainder of the 120 s. If a cycle ran over 120 s, it records
+    an overrun and starts the next cycle immediately.
+  - Per-cycle metrics (capture time, communication time, awake time, overrun) are logged
+    and kept in RTC memory.
+
+==========================================================================================
+9. CURRENT STATUS AND OPEN ITEMS
+==========================================================================================
+
+9.1 Values not yet configured
+-----------------------------
+These values have not been supplied yet. Every feature that depends on one reports
+CONFIG_NOT_SET or BLOCKED:
+
+  - LoRa RF profile (frequency, bandwidth, spreading factor, coding rate, power, sync
+    word, TCXO/DIO2, regulator, timeouts) and the antenna-confirmed flag
+  - LORA_FULL fragment size, ACK timeout and retry count
+  - Wi-Fi SSID and password, Jetson IP address and port, network timeouts
+  - Cow thermistor open/short detection thresholds
+  - Absolute time source
+
+9.2 Development defaults
+------------------------
+The following are temporary values, labelled NEEDS_HARDWARE_VALIDATION: device_id
+0x00000001, 100 ms rail stabilisation, 50 ms mode-switch debounce, ADC attenuation 12 dB,
+12-bit resolution.
+
+9.3 Hardware questions
+----------------------
+Questions about the power switch and ECO jumper behaviour, the TCXO, the DIO2 RF switch
+and other hardware details are tracked in hardware_questions.md.
+
+9.4 Out of scope
+----------------
+Not included in this firmware: Heltec gateway and Jetson receiver software, over-the-air
+updates, permanent device identity, packet encryption/authentication, and battery
+monitoring (the PCB has no rail or battery measurement input).
+
+==========================================================================================
+10. BRING-UP PROCEDURE
+==========================================================================================
+
+  1. Run idf.py set-target esp32s3, then idf.py menuconfig ("CowNect collar
+     configuration"), then idf.py build.
+  2. In main/app_main.cpp, uncomment one test, then flash and open the serial monitor.
+  3. Read the result line (PASS, FAIL, BLOCKED or NEEDS_HARDWARE_VALIDATION) and record it
+     in BUILD_AND_VALIDATION_REPORT.md.
+  4. Work through Material 4 (board) to Material 15 (hybrid) in order, then enable
+     run_cownect_firmware().
+Alternatively, flash the final firmware with the PROG switch set to PROGRAMMING and run
+the same tests interactively from the console (for example test board, test capture 30,
+test lora_spi).

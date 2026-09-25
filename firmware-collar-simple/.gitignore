@@ -1,0 +1,7 @@
+build/
+managed_components/
+dependencies.lock
+build*.log
+# sdkconfig can contain Wi-Fi credentials entered through menuconfig - never commit it.
+sdkconfig
+sdkconfig.old

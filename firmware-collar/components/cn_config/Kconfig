@@ -159,16 +159,25 @@ menu "CowNect collar configuration"
             default ""
         config COWNECT_LORA_REGULATOR_MODE
             string "Regulator mode (LDO or DCDC)"
-            default ""
+            default "DCDC"
+            help
+                Ra-01SH datasheet V1.1 schematic: 15 uH inductor L6 is fitted on DCC_SW,
+                so DC-DC is available (lower current). LDO also works.
         config COWNECT_LORA_TCXO
             string "TCXO via DIO3: NONE or voltage (1.6,1.7,1.8,2.2,2.4,2.7,3.0,3.3)"
-            default ""
+            default "NONE"
+            help
+                Ra-01SH datasheet V1.1 schematic: passive crystal Y1 on XTA/XTB; DIO3 does
+                not power a TCXO.
         config COWNECT_LORA_TCXO_STARTUP_US
             string "TCXO startup timeout us (only when TCXO is not NONE)"
             default ""
         config COWNECT_LORA_DIO2_RF_SWITCH
             string "Use DIO2 as RF switch control (0/1)"
-            default ""
+            default "1"
+            help
+                Ra-01SH datasheet V1.1 schematic: DIO2 drives RF switch U2 through the TX_EN
+                net (DIO2=1 TX, DIO2=0 RX). Module TXEN is the same net; RXEN resistor is NC.
         config COWNECT_LORA_TX_TIMEOUT_MS
             string "TX operation timeout ms"
             default ""

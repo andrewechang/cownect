@@ -18,7 +18,7 @@ _Update this same file after every significant build or PCB test. Hardware resul
 | Compiler | xtensa-esp32s3-elf GCC 14.2.0 (`esp-14.2.0_20260121`) |
 | Build system | CMake 3.30.2 + Ninja 1.12.1, ccache 4.12.1 |
 | Python | ESP-IDF venv `D:\Espressif\tools\python\v5.5.5\venv` |
-| Tools location | EIM install under `D:\Espressif\tools` (`IDF_TOOLS_PATH=D:\Espressif\tools`). `esp-idf\export.ps1` alone fails: it looks for the venv under `%USERPROFILE%\.espressif`. Use the EIM/ESP-IDF PowerShell shortcut, or set `IDF_TOOLS_PATH` / `IDF_PYTHON_ENV_PATH` first. |
+| Tools location | EIM install under `D:\Espressif\tools` (`IDF_TOOLS_PATH=D:\Espressif\tools`). `esp-idf\export.ps1` alone fails: it looks for the venv under `%USERPROFILE%\.espressif`. **Use the Desktop shortcut `IDF_v5.5.5_Powershell`** (runs `C:\Espressif\tools\Microsoft.v5.5.5.PowerShell_profile.ps1`; sets `IDF_PATH`, the tools, and git). |
 | Git | Not on PATH (CMake warns; harmless) |
 | Vendored code | Semtech `sx126x_driver` v2.5.0 (commit `a10c5df`), unmodified |
 | Last build | 2026-09-24 09:24, `idf.py build` (default `app_main.cpp`: all tests commented) |
@@ -139,7 +139,7 @@ Every gated test reports `RESULT: BLOCKED` with the missing item named, before a
 
 ## 6. CONFIG_NOT_SET
 
-Set these values in `idf.py menuconfig` → **CowNect collar configuration**.
+Set these values in `idf.py menuconfig` → **Component config → CowNect collar configuration** (or press `/` and search the option name).
 
 **ADC**
 * `COWNECT_COW_OPEN_THRESHOLD_MV` = 0, `COWNECT_COW_SHORT_THRESHOLD_MV` = 0 (until set, only rail codes and divider math are checked)
@@ -302,7 +302,7 @@ No on-air or on-wire byte format changed in this update. `docs/protocols.md` is 
 4. Comment it again, uncomment `test_psram();`, and repeat. Expect 8 MB and `M4.2 RESULT: PASS`.
 5. Record both in section 8. Continue with M4.3 `test_board_gpio()`.
 
-From an ESP-IDF v5.5.5 PowerShell (tools in `D:\Espressif\tools`):
+From the Desktop shortcut **`IDF_v5.5.5_Powershell`**, after `cd E:\Cownect\Firmware`:
 
 Build:
 ```
