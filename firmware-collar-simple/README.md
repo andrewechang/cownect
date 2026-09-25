@@ -1,10 +1,7 @@
 # CowNect Collar: Simple Firmware, Version 2
 
-ESP32-S3, ESP-IDF v5.5.5, plain C. Same functions as the earlier simple version (version 1, in the git history of this folder), with a
-simpler structure and one new problem check (**microphone clipping**).
+ESP32-S3, ESP-IDF v5.5.5, plain C. 
 
-**Status:** builds with no warnings in both send modes; data formats tested on a PC.
-**Not yet tested on the hardware.**
 See `CHECKLIST.md` for what is done, the values still to fill in, the hardware tests, and future ideas.
 
 ## What it does
