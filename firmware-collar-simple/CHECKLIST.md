@@ -1,7 +1,7 @@
-# CowNect Simple Firmware: What Is Needed vs. What Can Come Later
+# CowNect Simple Firmware (Version 2): What Is Needed vs. What Can Come Later
 
-This is the **student-sized** version of the collar firmware: about 2,100 lines (with comments) in 20 files. The full
-firmware in `firmware-collar/` is about 12,800 lines in 133 files. Both do the same basic job;
+This is the **student-sized** version of the collar firmware: about 1,960 lines (with comments) in 18 files. The full
+firmware (`firmware-collar/`) is about 12,800 lines in 133 files. Both do the same basic job;
 the simple one leaves out the "production" extras.
 
 Status legend: ✅ written and compiles · 🔧 written, needs a value from you or a hardware test · ⬜ not done
@@ -15,7 +15,7 @@ Status legend: ✅ written and compiles · 🔧 written, needs a value from you 
 |---|---|---|---|
 | 1 | Sensor power rail on/off (GPIO4) with 100 ms settle time | ✅ | `main.c` |
 | 2 | PROG switch (GPIO15): LOW = idle so you can re-flash, HIGH = run | ✅ | `main.c` |
-| 3 | PSRAM check (the microphone recording needs ~1.9 MB) | ✅ | `capture.c` |
+| 3 | PSRAM check (the microphone recording needs ~1.9 MB) | ✅ | `analog.c` |
 
 ### A2. Collecting the data correctly (30 s capture)
 | # | Item | Status | Where |
@@ -31,14 +31,15 @@ Status legend: ✅ written and compiles · 🔧 written, needs a value from you 
 ### A3. Processing
 | # | Item | Status | Where |
 |---|---|---|---|
-| 11 | Summary: last GPS fix, mean temperatures, accel magnitude mean/RMS, microphone RMS, error flags | ✅ | `summary.c` |
+| 11 | Summary: last GPS fix, mean temperatures, accel magnitude mean/RMS, microphone RMS, error flags | ✅ | `capture.c` |
+| 11a | Problem checks sent with the data: samples lost (accel/mic), GPS wiring vs no fix, bad GPS text, cow probe fault, cycle overrun, **microphone clipping** | ✅ | `capture.c`, `analog.c` |
 
 ### A4. Sending the data
 | # | Item | Status | Where |
 |---|---|---|---|
-| 12 | 49-byte LoRa telemetry packet (same format as the full firmware / gateway) | ✅ | `packets.c` |
+| 12 | 49-byte LoRa telemetry packet (same format as the full firmware / gateway) | ✅ | `data_format.c` |
 | 13 | SX1262 LoRa: reset, configure, send one packet, wait for TX done with a timeout | 🔧 needs the RF settings in `lora.h` | `lora.c` |
-| 14 | Raw capture stream v1 (same format the Jetson receiver expects) | ✅ | `packets.c` |
+| 14 | Raw capture stream v1 (same format the Jetson receiver expects) | ✅ | `data_format.c` |
 | 15 | Wi-Fi connect + TCP upload of the raw capture to the Jetson | 🔧 needs SSID/password/Jetson IP/port in `wifi_upload.h` | `wifi_upload.c` |
 | 15a | Choose the mode in `config.h`: `COMM_MODE = COMM_HYBRID` (items 12–15) or `COMM_LORA_FULL` (items 15b–15c) | ✅ | `config.h`, `main.c` |
 | 15b | **LORA_FULL**: whole raw capture over LoRa, cut into fragments (40-byte header + data), CRC-32 over the whole stream, same format as the full firmware | 🔧 needs the LoRa RF values + fragment size | `lora_full.c` |
@@ -113,10 +114,10 @@ These are in the full firmware or were left out on purpose (LORA_FULL is now inc
 
 ## Part C: Simple vs. full firmware at a glance
 
-| | Simple (`firmware-collar-simple`) | Full (`firmware-collar`) |
+| | Simple v2 (`firmware-collar-simple`) | Full (`firmware-collar`) |
 |---|---|---|
 | Language | C | C++ |
-| Size | ~2,100 lines (with comments), 20 files | ~12,800 lines, 133 files |
+| Size | ~1,960 lines (with comments), 18 files | ~12,800 lines, 133 files |
 | Settings | `config.h` + a SETTINGS block at the top of each module .h | menuconfig (Kconfig) + constants |
 | Sensors / rates | same | same |
 | Packet formats | same (gateway/Jetson compatible) | same |

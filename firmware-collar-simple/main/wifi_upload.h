@@ -6,6 +6,7 @@
 #pragma once
 #include <stdbool.h>
 #include "config.h"
+#include "capture.h"
 
 // ================================================================ SETTINGS
 #define WIFI_SSID              ""      // TODO network name
@@ -16,7 +17,6 @@
 #define TCP_SEND_TIMEOUT_MS    0       // TODO e.g. 5000 - 0 = not set
 // ================================================================
 
-typedef struct capture_s capture_t;
 
 // Returns true when every setting above is filled in; otherwise logs the first
 // missing one and returns false.

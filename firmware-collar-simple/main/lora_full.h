@@ -13,6 +13,7 @@
 #pragma once
 #include <stdbool.h>
 #include "config.h"
+#include "capture.h"
 
 // ================================================================ SETTINGS
 #define LORA_FULL_FRAGMENT_BYTES 0     // TODO stream bytes per packet, 1..215 (255 - 40 header) - 0 = not set
@@ -21,7 +22,6 @@
 #define LORA_FULL_MAX_RETRIES  (-1)    // TODO re-sends per fragment before giving up (0 = send once) - -1 = not set
 // ================================================================
 
-typedef struct capture_s capture_t;
 
 // Returns true when the settings above are filled in and valid; otherwise logs why not.
 bool lora_full_config_ready(void);
