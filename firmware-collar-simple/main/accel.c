@@ -1,121 +1,103 @@
-// accel.c - LIS2DW12 driver: only what the collar needs.
+// accel.c - LIS2DW12 accelerometer: only the few registers the collar needs.
 #include "accel.h"
-#include "capture.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 
 static const char *TAG = "accel";
 
-// Registers
-#define REG_WHO_AM_I     0x0F
-#define REG_CTRL1        0x20
-#define REG_CTRL2        0x21
-#define REG_CTRL6        0x25
-#define REG_OUT_X_L      0x28
-#define REG_FIFO_CTRL    0x2E
-#define REG_FIFO_SAMPLES 0x2F
-#define WHO_AM_I_VALUE   0x44
+#define REG_WHO_AM_I      0x0F    // chip ID, must read 0x44
+#define REG_CTRL1         0x20    // rate + mode
+#define REG_CTRL2         0x21    // BDU + address auto-increment
+#define REG_CTRL6         0x25    // range
+#define REG_OUT_X_L       0x28    // first data byte (X low)
+#define REG_FIFO_CTRL     0x2E    // FIFO mode
+#define REG_FIFO_SAMPLES  0x2F    // bit 6 = overflow, bits 0-5 = samples waiting
 
-#define I2C_TIMEOUT_MS   50
+static i2c_master_bus_handle_t bus;
+static i2c_master_dev_handle_t sensor;
 
-static i2c_master_bus_handle_t s_bus;
-static i2c_master_dev_handle_t s_dev;
-
-// Writes one byte into one sensor register. Returns true on success.
+// Writes one sensor register.
 static bool write_reg(uint8_t reg, uint8_t value)
 {
     uint8_t buf[2] = {reg, value};
-    return i2c_master_transmit(s_dev, buf, 2, I2C_TIMEOUT_MS) == ESP_OK;
+    return i2c_master_transmit(sensor, buf, 2, 50) == ESP_OK;
 }
 
-// Reads `len` bytes starting at register `reg` (the address auto-increments).
+// Reads len bytes starting at register reg.
 static bool read_regs(uint8_t reg, uint8_t *out, size_t len)
 {
-    return i2c_master_transmit_receive(s_dev, &reg, 1, out, len, I2C_TIMEOUT_MS) == ESP_OK;
+    return i2c_master_transmit_receive(sensor, &reg, 1, out, len, 50) == ESP_OK;
 }
 
-// Creates the I2C bus and device, checks WHO_AM_I = 0x44, then configures:
-// power-down -> BDU + auto-increment -> range -> clear FIFO -> rate (high-performance)
-// -> FIFO in continuous mode. Returns false if any step fails.
+// Opens the I2C bus, checks the chip ID, then sets range, rate and FIFO mode.
 bool accel_start(void)
 {
     i2c_master_bus_config_t bus_cfg = {
-        .i2c_port = I2C_NUM_0,
-        .sda_io_num = PIN_I2C_SDA,
-        .scl_io_num = PIN_I2C_SCL,
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = false,   // the board has 4.7k pull-ups
+        .i2c_port = I2C_NUM_0, .sda_io_num = PIN_I2C_SDA, .scl_io_num = PIN_I2C_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT, .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = false,          // the board has 4.7k pull-ups
     };
-    if (i2c_new_master_bus(&bus_cfg, &s_bus) != ESP_OK) {
-        ESP_LOGE(TAG, "I2C bus init failed");
-        return false;
-    }
     i2c_device_config_t dev_cfg = {
-        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-        .device_address = ACCEL_I2C_ADDR,
-        .scl_speed_hz = ACCEL_I2C_HZ,
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = ACCEL_I2C_ADDR, .scl_speed_hz = ACCEL_I2C_HZ,
     };
-    if (i2c_master_bus_add_device(s_bus, &dev_cfg, &s_dev) != ESP_OK) {
+    if (i2c_new_master_bus(&bus_cfg, &bus) != ESP_OK ||
+        i2c_master_bus_add_device(bus, &dev_cfg, &sensor) != ESP_OK) {
+        ESP_LOGE(TAG, "I2C start failed");
         accel_stop();
         return false;
     }
 
-    uint8_t who = 0;
-    if (!read_regs(REG_WHO_AM_I, &who, 1) || who != WHO_AM_I_VALUE) {
-        ESP_LOGE(TAG, "LIS2DW12 not found (WHO_AM_I=0x%02X, expected 0x44)", who);
+    uint8_t id = 0;
+    if (!read_regs(REG_WHO_AM_I, &id, 1) || id != 0x44) {
+        ESP_LOGE(TAG, "LIS2DW12 not found (ID 0x%02X, expected 0x44)", id);
         accel_stop();
         return false;
     }
 
-    bool ok = write_reg(REG_CTRL1, 0x00)                    // power down while configuring
-           && write_reg(REG_CTRL2, 0x0C)                    // BDU + register auto-increment
-           && write_reg(REG_CTRL6, ACCEL_FS_BITS)           // range, bandwidth ODR/2
-           && write_reg(REG_FIFO_CTRL, 0x00)                // bypass mode = clear FIFO
-           && write_reg(REG_CTRL1, ACCEL_ODR_BITS | 0x04)   // rate, high-performance 14-bit
-           && write_reg(REG_FIFO_CTRL, 0xC0);               // continuous FIFO mode
+    bool ok = write_reg(REG_CTRL1, 0x00)                       // power down while changing settings
+           && write_reg(REG_CTRL2, 0x0C)                       // BDU + auto-increment
+           && write_reg(REG_CTRL6, ACCEL_RANGE_BITS)           // range
+           && write_reg(REG_FIFO_CTRL, 0x00)                   // clear the FIFO
+           && write_reg(REG_CTRL1, ACCEL_RATE_BITS | 0x04)     // rate, high-performance 14-bit
+           && write_reg(REG_FIFO_CTRL, 0xC0);                  // FIFO continuous mode
     if (!ok) {
         ESP_LOGE(TAG, "configuration failed");
         accel_stop();
         return false;
     }
-    ESP_LOGI(TAG, "LIS2DW12 ready: %d Hz, +/-%d g, FIFO polled every %d ms",
-             ACCEL_ODR_HZ, ACCEL_RANGE_G, ACCEL_POLL_MS);
+    ESP_LOGI(TAG, "ready: %d Hz, +/-%d g", ACCEL_RATE_HZ, ACCEL_RANGE_G);
     return true;
 }
 
-// Reads FIFO_SAMPLES to see how many samples are waiting (and whether the FIFO
-// overflowed), then reads each X/Y/Z sample (6 bytes) into c->accel[].
-// Samples beyond ACCEL_MAX_SAMPLES are read (to empty the FIFO) but dropped.
-void accel_poll(capture_t *c)
+// Asks how many samples are waiting (and whether the FIFO overflowed), then reads them.
+void accel_read_fifo(accel_data_t *a)
 {
     uint8_t status;
     if (!read_regs(REG_FIFO_SAMPLES, &status, 1)) return;
-    if (status & 0x40) c->accel_overruns++;          // FIFO overflow: we were too slow
-    uint8_t waiting = status & 0x3F;                 // number of samples in the FIFO
+    if (status & 0x40) a->overruns++;                   // too slow: samples were lost
+    int waiting = status & 0x3F;
 
-    uint8_t raw[6];
-    for (uint8_t i = 0; i < waiting; i++) {
+    for (int i = 0; i < waiting; i++) {
+        uint8_t raw[6];
         if (!read_regs(REG_OUT_X_L, raw, 6)) return;
-        if (c->accel_count >= ACCEL_MAX_SAMPLES) continue;   // buffer full: drop
-        accel_sample_t *s = &c->accel[c->accel_count++];
-        s->x = (int16_t)(raw[0] | (raw[1] << 8));
-        s->y = (int16_t)(raw[2] | (raw[3] << 8));
-        s->z = (int16_t)(raw[4] | (raw[5] << 8));
+        if (a->count >= ACCEL_MAX_SAMPLES) continue;    // buffer full: read but drop
+        a->samples[a->count].x = (int16_t)(raw[0] | (raw[1] << 8));
+        a->samples[a->count].y = (int16_t)(raw[2] | (raw[3] << 8));
+        a->samples[a->count].z = (int16_t)(raw[4] | (raw[5] << 8));
+        a->count++;
     }
 }
 
-// Writes CTRL1 = 0 (power-down) and deletes the I2C device and bus.
-// Safe to call even if accel_start() failed halfway.
+// Powers the sensor down and frees the I2C bus (safe to call after a failed start).
 void accel_stop(void)
 {
-    if (s_dev) {
-        write_reg(REG_CTRL1, 0x00);                  // power down
-        i2c_master_bus_rm_device(s_dev);
-        s_dev = NULL;
+    if (sensor) {
+        write_reg(REG_CTRL1, 0x00);
+        i2c_master_bus_rm_device(sensor);
+        sensor = NULL;
     }
-    if (s_bus) {
-        i2c_del_master_bus(s_bus);
-        s_bus = NULL;
+    if (bus) {
+        i2c_del_master_bus(bus);
+        bus = NULL;
     }
 }

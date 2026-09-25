@@ -16,7 +16,7 @@ struct TestCommand {
     const char* help;
 };
 
-// Names follow CLAUDE_INSTRUCTIONS section 20 and the per-material command lists.
+// Names follow project instructions section 20 and the per-material command lists.
 const TestCommand kCommands[] = {
     // Material 4
     {"board", cmd_board, "boot/self-test report (PSRAM, mode, rail command)"},

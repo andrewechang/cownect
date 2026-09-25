@@ -4,7 +4,7 @@
 #include <string.h>
 #include "config.h"
 #include "capture.h"
-#include "packets.h"
+#include "data_format.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -102,18 +102,18 @@ static bool send_capture(const capture_t *c)
         return false;
     }
 
-    uint8_t *head = malloc(STREAM_HEAD_MAX_BYTES);
+    uint8_t *head = malloc(STREAM_HEAD_MAX);
     bool ok = head != NULL;
     if (ok) {
-        uint32_t total = stream_total_bytes(c);
+        uint32_t total = stream_size(c);
         uint8_t hdr[UPLOAD_HEADER_BYTES], tail[STREAM_TAIL_BYTES];
-        size_t hdr_len = packet_build_upload_header(c, total, hdr);
-        size_t head_len = stream_build_head(c, head);
-        size_t tail_len = stream_build_tail(tail);
+        size_t hdr_len = build_upload_header(c, total, hdr);
+        size_t head_len = build_stream_head(c, head);
+        size_t tail_len = build_stream_tail(tail);
         // The ESP32 is little-endian, so the uint16 microphone buffer already has the
         // byte order of the stream format and can be sent as it is.
         ok = send_all(sock, hdr, hdr_len) && send_all(sock, head, head_len) &&
-             send_all(sock, c->mic, c->mic_count * sizeof(uint16_t)) && send_all(sock, tail, tail_len);
+             send_all(sock, c->analog.mic, c->analog.mic_count * sizeof(uint16_t)) && send_all(sock, tail, tail_len);
         if (ok) ESP_LOGI(TAG, "uploaded capture %u: %u bytes", (unsigned)c->capture_id, (unsigned)total);
         else ESP_LOGE(TAG, "upload interrupted");
         free(head);

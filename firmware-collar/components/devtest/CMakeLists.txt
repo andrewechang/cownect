@@ -1,4 +1,4 @@
-# Development-only staged tests (CLAUDE_INSTRUCTIONS section 20). Every test calls the real
+# Development-only staged tests (project instructions section 20). Every test calls the real
 # production drivers/managers; there is no second fake implementation.
 idf_component_register(
     SRCS "devtest_common.cpp"

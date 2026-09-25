@@ -9,7 +9,7 @@
 #include "config.h"
 #include "capture.h"
 #include "lora.h"
-#include "packets.h"
+#include "data_format.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 
@@ -77,10 +77,10 @@ bool lora_full_send(const capture_t *c)
 {
     if (!lora_config_ready() || !lora_full_config_ready()) return false;
 
-    uint8_t *head = malloc(STREAM_HEAD_MAX_BYTES);
+    uint8_t *head = malloc(STREAM_HEAD_MAX);
     if (!head) return false;
-    size_t head_len = stream_build_head(c, head);
-    uint32_t total = stream_total_bytes(c);
+    size_t head_len = build_stream_head(c, head);
+    uint32_t total = stream_size(c);
     const uint32_t frag = LORA_FULL_FRAGMENT_BYTES > 0 ? LORA_FULL_FRAGMENT_BYTES : 1;   // 0 = not set (checked above)
     uint32_t count = (total + frag - 1) / frag;
 
@@ -90,7 +90,7 @@ bool lora_full_send(const capture_t *c)
     for (uint32_t off = 0; off < total; off += sizeof(chunk)) {
         size_t n = total - off < sizeof(chunk) ? total - off : sizeof(chunk);
         stream_copy(c, head, head_len, off, chunk, n);
-        crc = crc32_update(crc, chunk, n);
+        crc = crc32_add(crc, chunk, n);
     }
 
     ESP_LOGI(TAG, "capture %u: %u bytes -> %u fragments of %d bytes, ACK %s, CRC32 0x%08X",
