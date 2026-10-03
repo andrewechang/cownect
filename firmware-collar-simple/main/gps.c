@@ -12,6 +12,7 @@ static int line_len;
 static uint8_t last_quality;      // from the latest GGA, attached to the next RMC fix
 static uint8_t last_satellites;
 static bool uart_open;
+static bool echo;                 // print every sentence (TEST 6 only)
 
 // Opens the UART at GPS_BAUD on the GPS pins.
 bool gps_start(void)
@@ -103,6 +104,7 @@ void gps_read(gps_data_t *g, uint32_t time_ms)
             if (c == '\r' || c == '\n') {
                 if (line_len > 0) {
                     line[line_len] = '\0';
+                    if (echo) ESP_LOGI(TAG, "%s", line);   // before use_sentence() cuts it up
                     use_sentence(g, time_ms);
                     line_len = 0;
                 }
@@ -114,6 +116,12 @@ void gps_read(gps_data_t *g, uint32_t time_ms)
             }
         }
     }
+}
+
+// Turns the sentence printing on or off (see gps.h).
+void gps_set_echo(bool on)
+{
+    echo = on;
 }
 
 // Closes the UART if it is open.

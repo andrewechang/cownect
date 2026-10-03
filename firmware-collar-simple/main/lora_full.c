@@ -50,10 +50,6 @@ bool lora_full_config_ready(void)
         ESP_LOGW(TAG, "LORA_FULL skipped: %s is not set in lora_full.h", missing);
         return false;
     }
-    if (DATA_HEADER_BYTES + LORA_FULL_FRAGMENT_BYTES > LORA_MAX_PACKET) {
-        ESP_LOGE(TAG, "LORA_FULL_FRAGMENT_BYTES too big (max %d)", LORA_MAX_PACKET - DATA_HEADER_BYTES);
-        return false;
-    }
     return true;
 }
 

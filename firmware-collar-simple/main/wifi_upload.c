@@ -84,13 +84,12 @@ static bool send_all(int sock, const void *data, size_t len)
     return true;
 }
 
-// Opens a TCP connection to the Jetson and sends, in order: the 21-byte upload
-// header, the stream head, the microphone samples straight from PSRAM, and the
-// 12-byte tail. Closes the connection afterwards.
-static bool send_capture(const capture_t *c)
+// Opens a TCP connection to JETSON_IP:JETSON_RAW_PORT with the send timeout set.
+// Returns the socket, or -1 (and logs) if the Jetson does not accept the connection.
+static int open_jetson_socket(void)
 {
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (sock < 0) return false;
+    if (sock < 0) return -1;
     struct timeval tv = { .tv_sec = TCP_SEND_TIMEOUT_MS / 1000, .tv_usec = (TCP_SEND_TIMEOUT_MS % 1000) * 1000 };
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
@@ -99,8 +98,18 @@ static bool send_capture(const capture_t *c)
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         ESP_LOGE(TAG, "cannot connect to %s:%d", JETSON_IP, JETSON_RAW_PORT);
         close(sock);
-        return false;
+        return -1;
     }
+    return sock;
+}
+
+// Opens a TCP connection to the Jetson and sends, in order: the 21-byte upload
+// header, the stream head, the microphone samples straight from PSRAM, and the
+// 12-byte tail. Closes the connection afterwards.
+static bool send_capture(const capture_t *c)
+{
+    int sock = open_jetson_socket();
+    if (sock < 0) return false;
 
     uint8_t *head = malloc(STREAM_HEAD_MAX);
     bool ok = head != NULL;
@@ -123,11 +132,10 @@ static bool send_capture(const capture_t *c)
     return ok;
 }
 
-// See wifi_upload.h: init (first time) -> start + connect -> wait for IP ->
-// send_capture() -> disconnect + stop.
-bool wifi_upload_capture(const capture_t *c)
+// Init (first time) -> start + connect -> wait up to WIFI_CONNECT_TIMEOUT_MS for
+// an IP address. Returns true once the router has given us an IP address.
+static bool wifi_connect(void)
 {
-    if (!wifi_config_ready()) return false;
     if (!wifi_init_once()) {
         ESP_LOGE(TAG, "Wi-Fi init failed");
         return false;
@@ -135,12 +143,48 @@ bool wifi_upload_capture(const capture_t *c)
     xEventGroupClearBits(s_events, GOT_IP_BIT);
     esp_wifi_start();
     esp_wifi_connect();
-    bool ok = false;
     EventBits_t bits = xEventGroupWaitBits(s_events, GOT_IP_BIT, pdFALSE, pdTRUE,
                                            pdMS_TO_TICKS(WIFI_CONNECT_TIMEOUT_MS));
-    if (bits & GOT_IP_BIT) ok = send_capture(c);
-    else ESP_LOGE(TAG, "could not connect to \"%s\" in time", WIFI_SSID);
+    if (bits & GOT_IP_BIT) return true;
+    ESP_LOGE(TAG, "could not connect to \"%s\" in time", WIFI_SSID);
+    return false;
+}
+
+// Disconnects and switches the Wi-Fi radio off (safe to call if it never started).
+static void wifi_off(void)
+{
     esp_wifi_disconnect();
     esp_wifi_stop();
+}
+
+// See wifi_upload.h: wifi_connect() -> send_capture() -> wifi_off().
+bool wifi_upload_capture(const capture_t *c)
+{
+    if (!wifi_config_ready()) return false;
+    bool ok = wifi_connect() && send_capture(c);
+    wifi_off();
+    return ok;
+}
+
+// See wifi_upload.h: wifi_connect() -> log IP and signal -> open + close a TCP
+// connection to the Jetson (nothing is sent) -> wifi_off().
+bool wifi_test_connection(void)
+{
+    bool ok = false;
+    if (wifi_connect()) {
+        esp_netif_ip_info_t ip = {0};
+        esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip);
+        wifi_ap_record_t ap = {0};
+        esp_wifi_sta_get_ap_info(&ap);
+        ESP_LOGI(TAG, "connected to \"%s\": IP " IPSTR ", signal %d dBm, channel %d",
+                 WIFI_SSID, IP2STR(&ip.ip), ap.rssi, ap.primary);
+        int sock = open_jetson_socket();
+        if (sock >= 0) {
+            ESP_LOGI(TAG, "Jetson %s:%d accepted the TCP connection (nothing sent)", JETSON_IP, JETSON_RAW_PORT);
+            close(sock);
+            ok = true;
+        }
+    }
+    wifi_off();
     return ok;
 }

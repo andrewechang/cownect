@@ -39,3 +39,6 @@ void gps_read(gps_data_t *g, uint32_t time_ms);
 
 // Closes the UART.
 void gps_stop(void);
+
+// Bring-up help (test_mode.c): true = print every complete NMEA sentence as it arrives.
+void gps_set_echo(bool on);

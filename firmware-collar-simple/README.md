@@ -1,8 +1,6 @@
 # CowNect Collar: Simple Firmware, Version 2
 
-ESP32-S3, ESP-IDF v5.5.5, plain C. 
-
-See `CHECKLIST.md` for what is done, the values still to fill in, the hardware tests, and future ideas.
+ESP32-S3, ESP-IDF v5.5.5, plain C.
 
 ## What it does
 Every 120 s: sensor power on → record all sensors for 30 s → check the data and make a

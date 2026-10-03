@@ -26,3 +26,9 @@ bool wifi_config_ready(void);
 // to JETSON_IP:JETSON_RAW_PORT, then disconnects and turns Wi-Fi off.
 // Returns true if every byte was sent.
 bool wifi_upload_capture(const capture_t *c);
+
+// Bring-up test (test_mode.c): connects to Wi-Fi, logs the IP address and signal
+// strength, opens and closes a TCP connection to the Jetson without sending any
+// data, then turns Wi-Fi off. Returns true if both connections worked.
+// Call wifi_config_ready() first.
+bool wifi_test_connection(void);

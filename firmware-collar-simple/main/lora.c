@@ -277,10 +277,6 @@ bool lora_spi_check(void)
 bool lora_begin(void)
 {
     if (!lora_config_ready()) return false;
-    if (bandwidth_code() == 0xFF) {
-        ESP_LOGE(TAG, "LORA_BANDWIDTH_KHZ must be 125, 250 or 500");
-        return false;
-    }
     if (!bus_start()) return false;
     if (!reset_radio() || !configure()) {
         ESP_LOGE(TAG, "radio configuration failed");

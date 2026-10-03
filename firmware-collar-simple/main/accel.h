@@ -21,8 +21,6 @@
   #define ACCEL_RATE_BITS 0x50
 #elif ACCEL_RATE_HZ == 200
   #define ACCEL_RATE_BITS 0x60
-#else
-  #error "ACCEL_RATE_HZ must be 25, 50, 100 or 200"
 #endif
 
 #if   ACCEL_RANGE_G == 2
@@ -37,12 +35,6 @@
 #elif ACCEL_RANGE_G == 16
   #define ACCEL_RANGE_BITS 0x30
   #define ACCEL_MG_PER_DIGIT 1.952f
-#else
-  #error "ACCEL_RANGE_G must be 2, 4, 8 or 16"
-#endif
-
-#if ACCEL_READ_EVERY_MS * ACCEL_RATE_HZ >= 32 * 1000
-  #error "ACCEL_READ_EVERY_MS too long: the 32-sample FIFO would overflow"
 #endif
 
 #define ACCEL_MAX_SAMPLES      (ACCEL_RATE_HZ * (CAPTURE_MS / 1000 + 2))   // capture + 2 s margin

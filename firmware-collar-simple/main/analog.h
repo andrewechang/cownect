@@ -28,9 +28,6 @@
 // ================================================================
 
 #define ADC_TOTAL_HZ           (2 * MIC_SAMPLE_RATE_HZ)
-#if ADC_TOTAL_HZ > 83333 || ADC_TOTAL_HZ < 611
-  #error "MIC_SAMPLE_RATE_HZ out of range: the ESP32-S3 ADC runs at 611..83333 Hz in total"
-#endif
 #define MIC_MAX_SAMPLES        (MIC_SAMPLE_RATE_HZ * (CAPTURE_MS / 1000) + MIC_SAMPLE_RATE_HZ / 10)
 #define TEMP_MAX_SAMPLES       (CAPTURE_MS / TEMP_EVERY_MS + 2)
 

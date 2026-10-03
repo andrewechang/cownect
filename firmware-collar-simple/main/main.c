@@ -16,6 +16,7 @@
 #include "lora.h"
 #include "lora_full.h"
 #include "wifi_upload.h"
+#include "test_mode.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
@@ -90,6 +91,9 @@ void app_main(void)
     gpio_config(&out);
     gpio_config(&in);
     sensor_power(false);
+
+    // Bring-up tests instead of the normal cycle (TEST_NUMBER in test_mode.h; 0 = off).
+    if (TEST_NUMBER != 0) test_run(&capture);   // never returns
 
     if (rtc_magic != 0xC0C0CAFE) {                  // first power-up, not a wake from sleep
         rtc_magic = 0xC0C0CAFE;
