@@ -20,7 +20,7 @@ esp_err_t Atgm336hDriver::init()
 {
     if (!installed_) {
         uart_config_t cfg = {};
-        cfg.baud_rate = static_cast<int>(config::GPS_BAUD);
+        cfg.baud_rate = static_cast<int>(baud_);
         cfg.data_bits = UART_DATA_8_BITS;
         cfg.parity = UART_PARITY_DISABLE;
         cfg.stop_bits = UART_STOP_BITS_1;
@@ -44,7 +44,7 @@ esp_err_t Atgm336hDriver::init()
         }
         installed_ = true;
         ESP_LOGI(TAG, "UART%d %u 8N1 RX=GPIO%d TX=GPIO%d", static_cast<int>(board::GPS_UART),
-                 static_cast<unsigned>(config::GPS_BAUD), board::PIN_GPS_UART_RX, board::PIN_GPS_UART_TX);
+                 static_cast<unsigned>(baud_), board::PIN_GPS_UART_RX, board::PIN_GPS_UART_TX);
     }
     framer_.reset();
     builder_.reset();
@@ -60,6 +60,21 @@ esp_err_t Atgm336hDriver::deinit()
     installed_ = false;
     uart_queue_ = nullptr;
     return uart_driver_delete(board::GPS_UART);
+}
+
+esp_err_t Atgm336hDriver::set_baud(uint32_t baud)
+{
+    baud_ = baud;
+    if (!installed_) {
+        return ESP_OK;  // applied by the next init()
+    }
+    esp_err_t err = uart_set_baudrate(board::GPS_UART, baud);
+    uart_flush_input(board::GPS_UART);
+    if (uart_queue_ != nullptr) {
+        xQueueReset(uart_queue_);
+    }
+    framer_.reset();
+    return err;
 }
 
 void Atgm336hDriver::reset_statistics()

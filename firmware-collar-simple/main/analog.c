@@ -22,6 +22,8 @@ static adc_cali_handle_t cal_board, cal_cow;
 static uint8_t frame[FRAME_BYTES];
 static volatile uint32_t overflow_count;
 static uint32_t board_sum, board_n, cow_sum, cow_n;    // running sums for the current period
+static uint32_t mic_capacity;                          // samples the mic buffer holds
+static bool mic_in_psram;                              // false = short internal-RAM fallback
 
 // Called by the ADC driver when its buffer is full (samples are being lost). Only counts.
 static bool IRAM_ATTR on_overflow(adc_continuous_handle_t h, const adc_continuous_evt_data_t *e, void *u)
@@ -41,24 +43,47 @@ static adc_cali_handle_t make_calibration(adc_channel_t ch)
     return h;
 }
 
-// Reserves the microphone buffer in PSRAM and creates the two calibrations.
+// Reserves the microphone buffer and creates the two calibrations.
+// PSRAM first (full recording); without PSRAM a short internal-RAM buffer.
 bool analog_init(analog_data_t *d)
 {
     d->mic = heap_caps_malloc(MIC_MAX_SAMPLES * sizeof(uint16_t), MALLOC_CAP_SPIRAM);
-    if (!d->mic) {
-        ESP_LOGE(TAG, "not enough PSRAM for the microphone");
-        return false;
+    if (d->mic) {
+        mic_capacity = MIC_MAX_SAMPLES;
+        mic_in_psram = true;
+    } else {
+        ESP_LOGE(TAG, "not enough PSRAM for the microphone (PSRAM free %u bytes)",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        d->mic = heap_caps_malloc(MIC_FALLBACK_SAMPLES * sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        if (!d->mic) {
+            ESP_LOGE(TAG, "internal-RAM fallback buffer failed too - no microphone");
+            return false;
+        }
+        mic_capacity = MIC_FALLBACK_SAMPLES;
+        ESP_LOGW(TAG, "using a %u ms INTERNAL RAM microphone buffer: recordings are cut short",
+                 (unsigned)(MIC_FALLBACK_SAMPLES * 1000ull / MIC_SAMPLE_RATE_HZ));
     }
     cal_board = make_calibration(CH_BOARD);
     cal_cow = make_calibration(CH_COW);
     return true;
 }
 
+uint32_t analog_mic_capacity(void) { return mic_capacity; }
+bool analog_mic_in_psram(void) { return mic_in_psram; }
+
 // Sets up the continuous ADC with the pattern MIC, BOARD, MIC, COW and starts it.
+// Every failing step logs its ESP-IDF error code.
 bool analog_start(analog_data_t *d)
 {
     adc_continuous_handle_cfg_t handle_cfg = { .max_store_buf_size = POOL_BYTES, .conv_frame_size = FRAME_BYTES };
-    if (adc_continuous_new_handle(&handle_cfg, &adc) != ESP_OK) return false;
+    esp_err_t err = adc_continuous_new_handle(&handle_cfg, &adc);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ADC start failed: new_handle %s (internal free %u, largest DMA block %u)", esp_err_to_name(err),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+        adc = NULL;
+        return false;
+    }
 
     const adc_channel_t order[4] = {CH_MIC, CH_BOARD, CH_MIC, CH_COW};
     adc_digi_pattern_config_t pattern[4];
@@ -72,10 +97,13 @@ bool analog_start(analog_data_t *d)
         .conv_mode = ADC_CONV_SINGLE_UNIT_1, .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,   // results carry their channel
     };
     adc_continuous_evt_cbs_t callbacks = { .on_pool_ovf = on_overflow };
-    if (adc_continuous_config(adc, &cfg) != ESP_OK ||
-        adc_continuous_register_event_callbacks(adc, &callbacks, NULL) != ESP_OK ||
-        adc_continuous_start(adc) != ESP_OK) {
-        ESP_LOGE(TAG, "ADC start failed");
+    const char *step = "config";
+    err = adc_continuous_config(adc, &cfg);
+    if (err == ESP_OK) { step = "callbacks"; err = adc_continuous_register_event_callbacks(adc, &callbacks, NULL); }
+    if (err == ESP_OK) { step = "start"; err = adc_continuous_start(adc); }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ADC start failed: %s %s (pattern MIC,BOARD,MIC,COW at %d Hz)", step, esp_err_to_name(err),
+                 ADC_TOTAL_HZ);
         adc_continuous_deinit(adc);
         adc = NULL;
         return false;
@@ -130,7 +158,7 @@ void analog_read(analog_data_t *d)
         switch (r->type2.channel) {
         case CH_MIC:
             if (value <= MIC_CLIP_LOW || value >= MIC_CLIP_HIGH) d->mic_clipped++;
-            if (d->mic_count < MIC_MAX_SAMPLES) d->mic[d->mic_count++] = (uint16_t)value;
+            if (d->mic_count < mic_capacity) d->mic[d->mic_count++] = (uint16_t)value;
             break;
         case CH_BOARD:
             board_sum += value;

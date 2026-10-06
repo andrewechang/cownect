@@ -201,8 +201,9 @@ void devtest_print_config_status()
     radio::LoraRfProfile p;
     radio::LoraConfigReport rep;
     const esp_err_t lora = radio::lora_load_rf_profile(p, rep);
-    std::printf("LoRa RF profile: %s%s%s\n", lora == ESP_OK ? "configured" : "CONFIG_NOT_SET",
-                lora == ESP_OK ? "" : " missing=", lora == ESP_OK ? "" : rep.missing);
+    std::printf("LoRa RF profile: %s%s%s%s\n", lora == ESP_OK ? "configured" : "CONFIG_NOT_SET",
+                lora == ESP_OK ? "" : " missing=", lora == ESP_OK ? "" : rep.missing,
+                rep.uses_test_profile ? " (built-in test profile for empty fields)" : "");
     const char* reason = nullptr;
     radio::lora_tx_gate(&reason);
     std::printf("LoRa TX gate: %s\n", reason);

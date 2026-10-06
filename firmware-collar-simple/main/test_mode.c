@@ -63,8 +63,8 @@ static float accel_to_g(int16_t raw)
     return (raw >> 2) * (ACCEL_MG_PER_DIGIT / 1000.0f);
 }
 
-// Short text for the reason of the last reset (power-on, watchdog, crash, ...).
-static const char *reset_reason_text(esp_reset_reason_t r)
+// Short text for the reason of the last reset (power-on, watchdog, crash, ...). Also used by main.c.
+const char *reset_reason_text(esp_reset_reason_t r)
 {
     switch (r) {
     case ESP_RST_POWERON:   return "power-on";
@@ -86,7 +86,7 @@ static bool run_analog(capture_t *c, uint32_t ms)
 {
     clear_capture(c);
     if (!s_mic_buffer_ok) {
-        ESP_LOGE(TAG, "no PSRAM microphone buffer (see TEST 1)");
+        ESP_LOGE(TAG, "no microphone buffer at all (see TEST 1)");
         return false;
     }
     if (!analog_start(&c->analog)) return false;          // analog_start() prints the reason
@@ -119,9 +119,11 @@ static result_t test_1_esp32(capture_t *c)
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
     ESP_LOGI(TAG, "last reset: %s | Wi-Fi MAC %02X:%02X:%02X:%02X:%02X:%02X",
              reset_reason_text(esp_reset_reason()), mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    ESP_LOGI(TAG, "microphone buffer (%u KB in PSRAM): %s",
-             (unsigned)(MIC_MAX_SAMPLES * sizeof(uint16_t) / 1024), s_mic_buffer_ok ? "reserved" : "NOT reserved");
-    return s_mic_buffer_ok ? RESULT_PASS : RESULT_FAIL;
+    ESP_LOGI(TAG, "PSRAM detected at boot: %s", esp_psram_is_initialized() ? "yes" : "NO");
+    ESP_LOGI(TAG, "microphone buffer: %s, %u samples (full recording needs %u in PSRAM)",
+             !s_mic_buffer_ok ? "NOT reserved" : analog_mic_in_psram() ? "PSRAM" : "INTERNAL RAM fallback",
+             (unsigned)analog_mic_capacity(), (unsigned)MIC_MAX_SAMPLES);
+    return (s_mic_buffer_ok && analog_mic_in_psram()) ? RESULT_PASS : RESULT_FAIL;
 }
 
 // ---------------------------------------------------------------- TEST 2
@@ -248,8 +250,39 @@ static result_t test_5_temps(capture_t *c)
 // Indoors you will see sentences but no fix; outdoors the first fix after
 // power-up can take ~35 s (cold start), so keep the test running.
 // PASS = at least one sentence with a correct checksum (= wiring and baud rate are right).
+// If nothing good arrives at GPS_BAUD, other common rates are tried first and the
+// one that works is used for the rest of the test (the normal firmware keeps GPS_BAUD).
+static const int GPS_BAUD_CANDIDATES[] = {GPS_BAUD, 115200, 38400, 57600, 19200, 4800};
+
+// Listens 2.5 s (> 2 NMEA sentences at 1 per second) at each rate until good sentences arrive.
+static void gps_find_baud(capture_t *c)
+{
+    for (int i = 0; i < (int)(sizeof(GPS_BAUD_CANDIDATES) / sizeof(GPS_BAUD_CANDIDATES[0])); i++) {
+        clear_capture(c);
+        gps_set_baud(GPS_BAUD_CANDIDATES[i]);
+        if (!gps_start()) return;
+        int64_t start = esp_timer_get_time();
+        while (ms_since(start) < 2500) {
+            gps_read(&c->gps, ms_since(start));
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        gps_stop();
+        ESP_LOGI(TAG, "%6d baud: %s (bad sentences %u)", GPS_BAUD_CANDIDATES[i],
+                 c->gps.uart_ok ? "good NMEA" : "nothing usable", (unsigned)c->gps.bad_sentences);
+        if (c->gps.uart_ok) {
+            if (GPS_BAUD_CANDIDATES[i] != GPS_BAUD)
+                ESP_LOGW(TAG, "the GPS talks at %d baud, not GPS_BAUD %d: change GPS_BAUD in gps.h",
+                         GPS_BAUD_CANDIDATES[i], GPS_BAUD);
+            return;
+        }
+    }
+    gps_set_baud(GPS_BAUD);
+    ESP_LOGE(TAG, "no rate gave good NMEA: staying at %d baud", GPS_BAUD);
+}
+
 static result_t test_6_gps(capture_t *c)
 {
+    gps_find_baud(c);
     clear_capture(c);
     if (!gps_start()) {
         ESP_LOGE(TAG, "GPS UART could not be started");
@@ -278,7 +311,7 @@ static result_t test_6_gps(capture_t *c)
     }
     if (!c->gps.uart_ok) {
         ESP_LOGE(TAG, "no good NMEA sentence: check GPS TX->GPIO%d, RX<-GPIO%d, %d baud, and the rail",
-                 PIN_GPS_RX, PIN_GPS_TX, GPS_BAUD);
+                 PIN_GPS_RX, PIN_GPS_TX, gps_get_baud());
     } else if (!last_valid) {
         ESP_LOGW(TAG, "no fix yet: normal indoors, or during the first ~35 s outdoors");
     }
@@ -322,9 +355,11 @@ static result_t test_8_lora_tx(capture_t *c)
 
 // ---------------------------------------------------------------- TEST 9
 // Wi-Fi: connects to the network, prints the IP address and signal strength,
-// then opens and closes a TCP connection to the Jetson (no data is sent).
+// then checks the upload target without sending data (UPLOAD_TARGET in wifi_upload.h):
+//   Jetson  -> opens and closes a TCP connection
+//   website -> HTTPS handshake with certificate check (the API key is not checked)
 // SKIP = the wifi_upload.h values are not set yet.
-// PASS = Wi-Fi connected and the Jetson accepted the TCP connection.
+// PASS = Wi-Fi connected and the target answered.
 static result_t test_9_wifi(capture_t *c)
 {
     if (!wifi_config_ready()) return RESULT_SKIP;  // prints which setting is missing
@@ -349,7 +384,7 @@ static const test_entry_t TESTS[] = {
     {test_6_gps,      "GPS"},
     {test_7_lora_spi, "LoRa SPI wiring"},
     {test_8_lora_tx,  "LoRa transmit"},
-    {test_9_wifi,     "Wi-Fi + Jetson"},
+    {test_9_wifi,     "Wi-Fi + upload target"},
 };
 #define TEST_COUNT (int)(sizeof(TESTS) / sizeof(TESTS[0]))
 

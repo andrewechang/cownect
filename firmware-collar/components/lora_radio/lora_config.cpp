@@ -5,9 +5,11 @@
 #include "config_parse.h"
 #include "cownect_err.h"
 #include "sdkconfig.h"
+#include "test_profile.h"
 
 namespace cownect::radio {
 namespace {
+namespace test_profile = config::test_profile;
 
 constexpr uint32_t kSupportedBw[] = {7810, 10420, 15630, 20830, 31250, 41670, 62500, 125000, 250000, 500000};
 
@@ -15,6 +17,15 @@ void note(LoraConfigReport& r, const char* name)
 {
     const size_t used = std::strlen(r.missing);
     std::snprintf(r.missing + used, sizeof(r.missing) - used, "%s%s", used ? "," : "", name);
+}
+
+// Menuconfig value when set, otherwise the built-in test profile value (noted in the report).
+const char* from_profile(const char* menuconfig_value, const char* builtin, LoraConfigReport& r)
+{
+    if (!config::is_set(menuconfig_value)) {
+        r.uses_test_profile = true;
+    }
+    return test_profile::pick(menuconfig_value, builtin);
 }
 
 template <typename T>
@@ -52,11 +63,14 @@ esp_err_t lora_load_rf_profile(LoraRfProfile& p, LoraConfigReport& r)
 {
     p = {};
     r.missing[0] = '\0';
+    r.uses_test_profile = false;
     bool ok = true;
     // Frequency: SX1262 synthesizer range 150-960 MHz (datasheet). The legal channel and the
     // module/gateway band variant must be confirmed separately (hardware_questions.md).
-    ok &= load_int(CONFIG_COWNECT_LORA_FREQUENCY_HZ, 150000000, 960000000, p.frequency_hz, r, "FREQUENCY_HZ");
-    if (load_int(CONFIG_COWNECT_LORA_BANDWIDTH_HZ, 7810, 500000, p.bandwidth_hz, r, "BANDWIDTH_HZ")) {
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_FREQUENCY_HZ, test_profile::LORA_FREQUENCY_HZ, r),
+            150000000, 960000000, p.frequency_hz, r, "FREQUENCY_HZ");
+    if (load_int(from_profile(CONFIG_COWNECT_LORA_BANDWIDTH_HZ, test_profile::LORA_BANDWIDTH_HZ, r),
+            7810, 500000, p.bandwidth_hz, r, "BANDWIDTH_HZ")) {
         if (!lora_bandwidth_supported(p.bandwidth_hz)) {
             note(r, "BANDWIDTH_HZ(unsupported)");
             ok = false;
@@ -64,18 +78,28 @@ esp_err_t lora_load_rf_profile(LoraRfProfile& p, LoraConfigReport& r)
     } else {
         ok = false;
     }
-    ok &= load_int(CONFIG_COWNECT_LORA_SPREADING_FACTOR, 5, 12, p.spreading_factor, r, "SPREADING_FACTOR");
-    ok &= load_int(CONFIG_COWNECT_LORA_CODING_RATE, 5, 8, p.coding_rate, r, "CODING_RATE");
-    ok &= load_int(CONFIG_COWNECT_LORA_PREAMBLE_SYMBOLS, 1, 65535, p.preamble_symbols, r, "PREAMBLE_SYMBOLS");
-    ok &= load_int(CONFIG_COWNECT_LORA_SYNC_WORD, 0, 255, p.sync_word, r, "SYNC_WORD");
-    ok &= load_bool(CONFIG_COWNECT_LORA_CRC_ENABLED, p.crc_enabled, r, "CRC_ENABLED");
-    ok &= load_bool(CONFIG_COWNECT_LORA_INVERT_IQ, p.invert_iq, r, "INVERT_IQ");
-    ok &= load_int(CONFIG_COWNECT_LORA_TX_POWER_DBM, -9, 22, p.tx_power_dbm, r, "TX_POWER_DBM");
-    ok &= load_int(CONFIG_COWNECT_LORA_PA_DUTY_CYCLE, 0, 7, p.pa_duty_cycle, r, "PA_DUTY_CYCLE");
-    ok &= load_int(CONFIG_COWNECT_LORA_PA_HP_MAX, 0, 7, p.pa_hp_max, r, "PA_HP_MAX");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_SPREADING_FACTOR, test_profile::LORA_SPREADING_FACTOR, r),
+            5, 12, p.spreading_factor, r, "SPREADING_FACTOR");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_CODING_RATE, test_profile::LORA_CODING_RATE, r),
+            5, 8, p.coding_rate, r, "CODING_RATE");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_PREAMBLE_SYMBOLS, test_profile::LORA_PREAMBLE_SYMBOLS, r),
+            1, 65535, p.preamble_symbols, r, "PREAMBLE_SYMBOLS");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_SYNC_WORD, test_profile::LORA_SYNC_WORD, r),
+            0, 255, p.sync_word, r, "SYNC_WORD");
+    ok &= load_bool(from_profile(CONFIG_COWNECT_LORA_CRC_ENABLED, test_profile::LORA_CRC_ENABLED, r),
+            p.crc_enabled, r, "CRC_ENABLED");
+    ok &= load_bool(from_profile(CONFIG_COWNECT_LORA_INVERT_IQ, test_profile::LORA_INVERT_IQ, r),
+            p.invert_iq, r, "INVERT_IQ");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_TX_POWER_DBM, test_profile::LORA_TX_POWER_DBM, r),
+            -9, 22, p.tx_power_dbm, r, "TX_POWER_DBM");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_PA_DUTY_CYCLE, test_profile::LORA_PA_DUTY_CYCLE, r),
+            0, 7, p.pa_duty_cycle, r, "PA_DUTY_CYCLE");
+    ok &= load_int(from_profile(CONFIG_COWNECT_LORA_PA_HP_MAX, test_profile::LORA_PA_HP_MAX, r),
+            0, 7, p.pa_hp_max, r, "PA_HP_MAX");
 
     int64_t ramp = 0;
-    if (config::parse_int(CONFIG_COWNECT_LORA_RAMP_TIME_US, 10, 3400, ramp) &&
+    if (config::parse_int(from_profile(CONFIG_COWNECT_LORA_RAMP_TIME_US, test_profile::LORA_RAMP_TIME_US, r),
+            10, 3400, ramp) &&
         (ramp == 10 || ramp == 20 || ramp == 40 || ramp == 80 || ramp == 200 || ramp == 800 || ramp == 1700 ||
          ramp == 3400)) {
         p.ramp_time_us = static_cast<uint16_t>(ramp);
@@ -122,12 +146,15 @@ void lora_load_driver_config(LoraDriverConfig& d, LoraConfigReport& r)
 {
     d = {};
     r.missing[0] = '\0';
+    r.uses_test_profile = false;
     d.spi_clock_hz = CONFIG_COWNECT_LORA_SPI_CLOCK_HZ;
     d.busy_timeout_ms = CONFIG_COWNECT_LORA_BUSY_TIMEOUT_MS;
     d.tx_timeout_configured =
-        load_int(CONFIG_COWNECT_LORA_TX_TIMEOUT_MS, 1, 262143, d.tx_operation_timeout_ms, r, "TX_TIMEOUT_MS");
+        load_int(from_profile(CONFIG_COWNECT_LORA_TX_TIMEOUT_MS, test_profile::LORA_TX_TIMEOUT_MS, r),
+                1, 262143, d.tx_operation_timeout_ms, r, "TX_TIMEOUT_MS");
     d.rx_timeout_configured =
-        load_int(CONFIG_COWNECT_LORA_RX_TIMEOUT_MS, 1, 262143, d.rx_operation_timeout_ms, r, "RX_TIMEOUT_MS");
+        load_int(from_profile(CONFIG_COWNECT_LORA_RX_TIMEOUT_MS, test_profile::LORA_RX_TIMEOUT_MS, r),
+                1, 262143, d.rx_operation_timeout_ms, r, "RX_TIMEOUT_MS");
 }
 
 esp_err_t lora_tx_gate(const char** reason)
@@ -148,6 +175,10 @@ esp_err_t lora_tx_gate(const char** reason)
     if (reason) *reason = "ok";
     return ESP_OK;
 #else
+    if (test_profile::LORA_ANTENNA_VERIFIED) {
+        if (reason) *reason = "ok (external antenna confirmed by the built-in test profile)";
+        return ESP_OK;
+    }
     if (reason) *reason = "external antenna connection not confirmed (set COWNECT_LORA_ANTENNA_VERIFIED in menuconfig)";
     return COWNECT_ERR_TX_BLOCKED;
 #endif

@@ -3,6 +3,7 @@
 #include "cownect_err.h"
 #include "lora_full_transfer.h"
 #include "sdkconfig.h"
+#include "test_profile.h"
 
 namespace cownect::lorafull {
 
@@ -14,7 +15,9 @@ esp_err_t lora_full_load_config(LoraFullConfig& c, const char** missing)
     c.stream_crc32_enabled = true;
 #endif
     int64_t v = 0;
-    if (!config::parse_int(CONFIG_COWNECT_LORA_FULL_FRAGMENT_PAYLOAD_BYTES, 1, 255, v)) {
+    if (!config::parse_int(config::test_profile::pick(CONFIG_COWNECT_LORA_FULL_FRAGMENT_PAYLOAD_BYTES,
+                                                    config::test_profile::LORA_FULL_FRAGMENT_PAYLOAD_BYTES),
+                           1, 255, v)) {
         if (missing) *missing = "LORA_FULL_FRAGMENT_PAYLOAD_BYTES";
         return COWNECT_ERR_NOT_CONFIGURED;
     }

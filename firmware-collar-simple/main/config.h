@@ -20,7 +20,7 @@
 #define DEBUG_NO_DEEP_SLEEP    0
 
 // ---------------------------------------------------------------- how the data is sent
-// COMM_HYBRID    : 49-byte summary over LoRa + full recording over Wi-Fi to the Jetson
+// COMM_HYBRID    : 49-byte summary over LoRa + full recording over Wi-Fi (Jetson or website, wifi_upload.h)
 // COMM_LORA_FULL : full recording over LoRa in fragments (research comparison, very slow)
 #define COMM_HYBRID            1
 #define COMM_LORA_FULL         2

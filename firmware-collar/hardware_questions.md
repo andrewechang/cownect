@@ -39,7 +39,7 @@ NEEDS_HARDWARE_VALIDATION, RESOLVED.
 |---|---|---|---|
 | 20 | LIS2DW12 raw -> g conversion (word >> 2 x 0.488 mg) | NEEDS_HARDWARE_VALIDATION | Material 5 orientation test; only the helper changes if wrong. |
 | 21 | I2C clock | Design default 100 kHz | `CONFIG_COWNECT_I2C_CLOCK_HZ`. |
-| 22 | ATGM336H default NMEA sentence set | OPEN | CASIC protocol spec not supplied. Parser handles standard RMC/GGA for any talker; run `test gps_discovery` and record the identifiers here. |
+| 22 | ATGM336H default NMEA sentence set | OPEN | CASIC protocol spec not supplied. Parser handles standard RMC/GGA for any talker; run `test gps_discovery` and record the identifiers here. The default baud rate is also unconfirmed: the GPS tests now detect it (2026-10-05). Record the `[GPS] using N baud` result here. |
 | 23 | GPS UART controller | Design decision UART2 | UART0 reserved for the backup debug header. |
 | 24 | NMEA max sentence length | Design default 128 B | Confirm with discovery output. |
 
@@ -50,15 +50,15 @@ NEEDS_HARDWARE_VALIDATION, RESOLVED.
 | 25 | Ra-01SH ANT pin 1 shows no ordinary net label on the schematic | PCB VERIFICATION ITEM | User confirmed (2026-09-24) the hardware uses an EXTERNAL antenna. Not a firmware hard block. Transmission is gated by `CONFIG_COWNECT_LORA_ANTENNA_VERIFIED` (operator confirms antenna attached / path verified). Never transmit without the antenna. |
 | 26 | Ra-01SH frequency band: datasheet lists 803-930 MHz and 410-525 MHz | OPEN (documentation conflict) | Confirm module marking/variant. |
 | 27 | Heltec WiFi LoRa 32 V3 purchased band variant | OPEN | Must match the Ra-01SH band. |
-| 28 | RF profile: frequency, bandwidth, SF, CR, preamble, sync word, CRC, IQ, TX power, PA duty/hpMax, ramp | CONFIG_NOT_SET | menuconfig strings, all empty. Legal regional channel must be selected. |
+| 28 | RF profile: frequency, bandwidth, SF, CR, preamble, sync word, CRC, IQ, TX power, PA duty/hpMax, ramp | DEVELOPMENT DEFAULT (user, 2026-10-05) | US915 bench profile in `cn_config/include/test_profile.h`, used when the menuconfig strings are empty: 915.0 MHz, BW 125 kHz, SF9, CR 4/5, preamble 8, sync 0x12, CRC on, IQ normal, PA +14 dBm datasheet row (22 / duty 2 / hpMax 2), ramp 200 us. The Heltec gateway must match. Still to confirm: the Ra-01SH band variant (#26) and the regulatory rules for a single fixed channel. |
 | 29 | Oscillator: TCXO on DIO3 (voltage/startup) or crystal | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): passive crystal Y1 (CY3225) on XTA/XTB, DIO3 does not power a TCXO. `CONFIG_COWNECT_LORA_TCXO="NONE"`. Regulator: 15 uH L6 fitted on DCC_SW, so `CONFIG_COWNECT_LORA_REGULATOR_MODE="DCDC"` (LDO also valid). |
 | 30 | RF switch: DIO2 control and TXEN/RXEN left unconnected | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): DIO2 drives RF switch U2 via R8 (0R) and the TX_EN net (DIO2=1 TX, DIO2=0 RX); module TXEN pin is the same net and the RXEN resistor R1 is NC. Leaving TXEN/RXEN unconnected on the PCB is correct when `CONFIG_COWNECT_LORA_DIO2_RF_SWITCH="1"`. The datasheet application circuit (p.12) also leaves them unconnected. |
 | 31 | SX1262 regulator mode (LDO / DC-DC) | RESOLVED FROM DATASHEET (NEEDS_HARDWARE_VALIDATION) | Ra-01SH datasheet V1.1 schematic (p.11): 15 uH L6 fitted on DCC_SW, so `CONFIG_COWNECT_LORA_REGULATOR_MODE="DCDC"` (LDO also valid). |
-| 32 | TX / RX operation timeouts | CONFIG_NOT_SET | TX is refused without a TX timeout. |
+| 32 | TX / RX operation timeouts | DEVELOPMENT DEFAULT 3000 / 5000 ms (test profile, 2026-10-05) | TX is refused without a TX timeout. A menuconfig value overrides. |
 | 33 | BUSY wait safety bound | DEVELOPMENT DEFAULT 100 ms / NEEDS_HARDWARE_VALIDATION | Bounds every SPI command; not an RF parameter. |
 | 34 | SPI clock | Design default 1 MHz (module max 10 MHz) | `CONFIG_COWNECT_LORA_SPI_CLOCK_HZ`. |
 | 35 | NRESET pulse | 1 ms low (datasheet minimum 100 us) then bounded BUSY wait | |
-| 36 | LORA_FULL fragment payload, ACK timeout, retry count | CONFIG_NOT_SET | header (40 B) + payload must be <= 255 B; oversize is rejected. |
+| 36 | LORA_FULL fragment payload, ACK timeout, retry count | Fragment payload DEVELOPMENT DEFAULT 200 B (test profile, 2026-10-05); ACK timeout / retries CONFIG_NOT_SET (ACK off) | header (40 B) + payload must be <= 255 B; oversize is rejected. |
 | 37 | LoRa TX during capture (analog interference A/B test) | Not enabled | `LORA_TX_DURING_CAPTURE_DEFAULT = false`; hybrid sends one packet after capture. |
 
 ## Network

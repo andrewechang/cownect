@@ -13,7 +13,7 @@
 //   TEST 6  GPS            : every NMEA sentence as received + parsed position
 //   TEST 7  LoRa SPI       : wiring check (sync word register = 0x1424), no transmission
 //   TEST 8  LoRa transmit  : sends one 49-byte telemetry packet (needs lora.h values + antenna)
-//   TEST 9  Wi-Fi          : connects, shows IP + signal, opens a TCP connection to the Jetson
+//   TEST 9  Wi-Fi          : connects, shows IP + signal, reaches the Jetson (TCP) or website (HTTPS)
 //                            (needs wifi_upload.h values)
 //
 // To use: set TEST_NUMBER below, build, flash, open the monitor.
@@ -33,7 +33,11 @@
 // ================================================================
 
 #include "capture.h"
+#include "esp_system.h"
 
 // Runs the test(s) chosen by TEST_NUMBER. Never returns.
 // `c` is the firmware's capture buffer, reused here for the sensor readings.
 void test_run(capture_t *c);
+
+// Short text for the reason of the last reset (power-on, watchdog, BROWNOUT, ...).
+const char *reset_reason_text(esp_reset_reason_t r);

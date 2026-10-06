@@ -9,10 +9,11 @@ namespace cownect::radio {
 // Human-readable list of missing/invalid configuration names.
 struct LoraConfigReport {
     char missing[320];
+    bool uses_test_profile;  // at least one value came from the built-in test profile
 };
 
-// Loads the RF profile from menuconfig. Returns COWNECT_ERR_NOT_CONFIGURED and lists every
-// missing/invalid value when incomplete. Never substitutes defaults.
+// Loads the RF profile from menuconfig; empty fields take the built-in test profile
+// (test_profile.h). Returns COWNECT_ERR_NOT_CONFIGURED and lists every invalid value.
 esp_err_t lora_load_rf_profile(LoraRfProfile& out, LoraConfigReport& report);
 
 // SPI clock / BUSY bound are always available; TX/RX timeouts are flagged when not set.

@@ -2,6 +2,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "cownect_config.h"
 #include "gps.h"
 #include "gps_fix_builder.h"
 #include "nmea_framer.h"
@@ -16,8 +17,8 @@ struct GpsFixBuffer {
 };
 
 // ATGM336H-5N31: ESP RX GPIO17 <- GPS TXD, ESP TX GPIO18 -> GPS RXD, 9600 8N1, NMEA.
-// The module default (9600 baud, 1 Hz) already matches the baseline, so no configuration
-// command is ever sent over UART TX.
+// The module default (9600 baud, 1 Hz) is expected to match the baseline, so no configuration
+// command is ever sent over UART TX. The bring-up tests detect the actual rate (set_baud()).
 class Atgm336hDriver final : public IGps {
 public:
     explicit Atgm336hDriver(GpsFixBuffer& buffer) : buf_(buffer) {}
@@ -47,6 +48,9 @@ public:
     }
     // Resets statistics and discovery tables without starting fix retention.
     void reset_statistics();
+    // Changes the UART baud rate (bring-up baud detection). Kept across deinit()/init().
+    esp_err_t set_baud(uint32_t baud);
+    uint32_t baud() const { return baud_; }
 
 private:
     void handle_uart_events();
@@ -62,6 +66,7 @@ private:
     StandardNmeaParser parser_;
     GpsFixBuilder builder_;
     QueueHandle_t uart_queue_ = nullptr;
+    uint32_t baud_ = config::GPS_BAUD;
     bool installed_ = false;
     bool capturing_ = false;
 

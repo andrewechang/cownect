@@ -8,13 +8,22 @@
 #include "cownect_config.h"
 #include "cycle_scheduler.h"
 #include "devtest.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_psram.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "rtc_state.h"
+#include "sdkconfig.h"
 #include "sleep_manager.h"
+
+// The ESP32-S3-WROOM-1-N16R8 has 8 MB OCTAL PSRAM. A quad-mode image aborts at boot
+// ("quad_psram: PSRAM chip is not connected") before app_main, so refuse to build one.
+#if !CONFIG_SPIRAM || !CONFIG_SPIRAM_MODE_OCT
+#error "N16R8 needs CONFIG_SPIRAM=y and CONFIG_SPIRAM_MODE_OCT=y (see sdkconfig.defaults); delete sdkconfig and rebuild"
+#endif
 
 using namespace cownect;
 
@@ -44,8 +53,20 @@ void cownect_system_init()
     board_power_init();  // PERIPH_EN commanded OFF until a cycle/test needs the rail
     data::rtc_state_init_on_boot();
     if (data::capture_storage_init() != ESP_OK) {
-        ESP_LOGE(TAG, "microphone capture buffer (PSRAM) unavailable");
+        ESP_LOGE(TAG, "microphone capture buffer unavailable (PSRAM and internal fallback failed)");
     }
+    // One line per boot so every test log shows the memory situation.
+    const bool psram = esp_psram_is_initialized();
+    std::printf("[BOOT] reset=%s PSRAM=%s size=%u free=%u | internal free=%u largest=%u | mic buffer=%s %u samples\n",
+                power::reset_reason_name(esp_reset_reason()), psram ? "OK" : "NOT DETECTED",
+                static_cast<unsigned>(psram ? esp_psram_get_size() : 0),
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+                static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)),
+                !data::capture_storage_microphone_available() ? "NONE"
+                : data::capture_storage_microphone_in_psram() ? "PSRAM"
+                                                               : "INTERNAL(fallback)",
+                static_cast<unsigned>(data::capture_storage().mic_capacity));
 }
 
 void run_cownect_firmware()

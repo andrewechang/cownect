@@ -172,7 +172,16 @@ int cmd_lora_config(int, char**)
     radio::LoraRfProfile p;
     radio::LoraConfigReport rep;
     esp_err_t err = radio::lora_load_rf_profile(p, rep);
-    std::printf("[LORA] RF profile: %s %s\n", cownect_err_name(err), rep.missing);
+    std::printf("[LORA] RF profile: %s %s%s\n", cownect_err_name(err), rep.missing,
+                rep.uses_test_profile ? " (empty menuconfig fields use the built-in test profile, test_profile.h)" : "");
+    if (err == ESP_OK) {
+        std::printf("[LORA] f=%uHz bw=%uHz sf=%u cr=4/%u preamble=%u sync=0x%02X crc=%u iq_inv=%u\n",
+                    static_cast<unsigned>(p.frequency_hz), static_cast<unsigned>(p.bandwidth_hz), p.spreading_factor,
+                    p.coding_rate, static_cast<unsigned>(p.preamble_symbols), p.sync_word, p.crc_enabled ? 1u : 0u,
+                    p.invert_iq ? 1u : 0u);
+        std::printf("[LORA] SetTxParams=%ddBm paDutyCycle=%u hpMax=%u ramp=%uus\n", p.tx_power_dbm, p.pa_duty_cycle,
+                    p.pa_hp_max, static_cast<unsigned>(p.ramp_time_us));
+    }
     const char* reason = nullptr;
     radio::lora_tx_gate(&reason);
     std::printf("[LORA] TX gate: %s\n", reason);

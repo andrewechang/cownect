@@ -20,6 +20,7 @@ CaptureStorage s_storage = {s_accel, config::ACCEL_CAPTURE_MAX_SAMPLES, nullptr,
                             config::TEMP_CAPTURE_MAX_SAMPLES};
 CaptureSession s_session = {};
 bool s_init_done = false;
+bool s_mic_in_psram = false;
 }  // namespace
 
 esp_err_t capture_storage_init()
@@ -30,17 +31,36 @@ esp_err_t capture_storage_init()
     s_init_done = true;
     const size_t bytes = config::MIC_CAPTURE_MAX_SAMPLES * sizeof(uint16_t);
     s_storage.mic = static_cast<uint16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (s_storage.mic != nullptr) {
+        s_mic_in_psram = true;
+        s_storage.mic_capacity = config::MIC_CAPTURE_MAX_SAMPLES;
+        ESP_LOGI(TAG, "PSRAM microphone buffer %u bytes (%u samples) allocated once", static_cast<unsigned>(bytes),
+                 static_cast<unsigned>(s_storage.mic_capacity));
+        return ESP_OK;
+    }
+    ESP_LOGE(TAG, "PSRAM microphone buffer allocation (%u bytes) FAILED (PSRAM free=%u)", static_cast<unsigned>(bytes),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+
+    // Fallback: a short internal-RAM buffer so the microphone ADC path can still be tested.
+    const size_t fb_bytes = config::MIC_FALLBACK_MAX_SAMPLES * sizeof(uint16_t);
+    s_storage.mic = static_cast<uint16_t*>(heap_caps_malloc(fb_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     if (s_storage.mic == nullptr) {
-        ESP_LOGE(TAG, "PSRAM microphone buffer allocation (%u bytes) FAILED - microphone capture unavailable",
-                 static_cast<unsigned>(bytes));
+        ESP_LOGE(TAG, "internal fallback microphone buffer (%u bytes) FAILED - microphone capture unavailable",
+                 static_cast<unsigned>(fb_bytes));
         s_storage.mic_capacity = 0;
         s_session.state = CaptureState::EMPTY;
         return ESP_ERR_NO_MEM;
     }
-    s_storage.mic_capacity = config::MIC_CAPTURE_MAX_SAMPLES;
-    ESP_LOGI(TAG, "PSRAM microphone buffer %u bytes (%u samples) allocated once", static_cast<unsigned>(bytes),
-             static_cast<unsigned>(s_storage.mic_capacity));
+    s_storage.mic_capacity = config::MIC_FALLBACK_MAX_SAMPLES;
+    ESP_LOGW(TAG, "using INTERNAL RAM microphone buffer %u bytes (%u samples, %u ms) - captures are limited",
+             static_cast<unsigned>(fb_bytes), static_cast<unsigned>(s_storage.mic_capacity),
+             static_cast<unsigned>(s_storage.mic_capacity * 1000 / config::MIC_SAMPLE_RATE_HZ));
     return ESP_OK;
+}
+
+bool capture_storage_microphone_in_psram()
+{
+    return s_mic_in_psram;
 }
 
 CaptureStorage& capture_storage()

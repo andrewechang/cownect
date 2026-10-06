@@ -5,6 +5,7 @@
 #include "cownect_config.h"
 #include "cownect_err.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "hal/adc_types.h"
@@ -83,6 +84,7 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
         }
     }
     if (has_mic && (cfg.mic.data == nullptr || cfg.mic.capacity == 0)) {
+        ESP_LOGE(TAG, "start: no microphone destination buffer (capture storage not allocated)");
         return ESP_ERR_NO_MEM;
     }
     stats_.sample_freq_hz = cfg.sample_freq_hz;
@@ -90,6 +92,7 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
 
     esp_err_t err = board::adc_resource().acquire(board::AdcMode::CONTINUOUS);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "start: ADC1 ownership refused: %s", cownect_err_name(err));
         return err;
     }
     if (task_done_ == nullptr) {
@@ -99,6 +102,7 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
         bucket_queue_ = xQueueCreate(kBucketQueueLength, sizeof(AnalogBucketResult));
     }
     if (task_done_ == nullptr || bucket_queue_ == nullptr) {
+        ESP_LOGE(TAG, "start: semaphore/queue allocation failed");
         board::adc_resource().release(board::AdcMode::CONTINUOUS);
         return ESP_ERR_NO_MEM;
     }
@@ -110,6 +114,10 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
     hcfg.conv_frame_size = config::ADC_CONV_FRAME_BYTES;
     err = adc_continuous_new_handle(&hcfg, &handle_);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "start: adc_continuous_new_handle(pool=%u frame=%u) failed: %s (internal free=%u largest=%u)",
+                 static_cast<unsigned>(hcfg.max_store_buf_size), static_cast<unsigned>(hcfg.conv_frame_size),
+                 esp_err_to_name(err), static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+                 static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
         handle_ = nullptr;
         board::adc_resource().release(board::AdcMode::CONTINUOUS);
         return err;
@@ -131,11 +139,13 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
     cbs.on_pool_ovf = &AnalogAdcEngine::on_pool_overflow;
     err = adc_continuous_register_event_callbacks(handle_, &cbs, this);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "start: register_event_callbacks failed: %s", esp_err_to_name(err));
         cleanup_handle();
         return err;
     }
     if (xTaskCreatePinnedToCore(&AnalogAdcEngine::task_entry, "analog_adc", kTaskStack, this, kTaskPriority, &task_,
                                 kTaskCore) != pdPASS) {
+        ESP_LOGE(TAG, "start: acquisition task creation failed");
         task_ = nullptr;
         cleanup_handle();
         return ESP_ERR_NO_MEM;
@@ -143,6 +153,7 @@ esp_err_t AnalogAdcEngine::start(const AnalogEngineConfig& cfg)
     start_us_ = static_cast<uint64_t>(esp_timer_get_time());
     err = adc_continuous_start(handle_);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "start: adc_continuous_start failed: %s", esp_err_to_name(err));
         stop_requested_ = true;
         xSemaphoreTake(task_done_, pdMS_TO_TICKS(kTaskStopWaitMs));
         task_ = nullptr;

@@ -30,6 +30,8 @@
 #define ADC_TOTAL_HZ           (2 * MIC_SAMPLE_RATE_HZ)
 #define MIC_MAX_SAMPLES        (MIC_SAMPLE_RATE_HZ * (CAPTURE_MS / 1000) + MIC_SAMPLE_RATE_HZ / 10)
 #define TEMP_MAX_SAMPLES       (CAPTURE_MS / TEMP_EVERY_MS + 2)
+// Without PSRAM: a short buffer in internal RAM (2 s, 128 KB) so the microphone can still be tested
+#define MIC_FALLBACK_SAMPLES   (MIC_SAMPLE_RATE_HZ * 2)
 
 typedef struct {
     uint32_t time_ms;
@@ -41,7 +43,7 @@ typedef struct {
 } temp_sample_t;
 
 typedef struct {
-    uint16_t *mic;             // PSRAM buffer, MIC_MAX_SAMPLES long
+    uint16_t *mic;             // PSRAM buffer, MIC_MAX_SAMPLES long (no PSRAM: MIC_FALLBACK_SAMPLES)
     uint32_t mic_count;
     uint32_t mic_clipped;      // PROBLEM CHECK: samples at 0 or 4095 (sound too loud, cut off)
     uint32_t overflows;        // PROBLEM CHECK: ADC buffer overflowed -> samples lost
@@ -53,8 +55,13 @@ typedef struct {
     uint32_t cow_count;
 } analog_data_t;
 
-// Reserves the microphone buffer in PSRAM (call once after boot). False if no PSRAM.
+// Reserves the microphone buffer in PSRAM (call once after boot). Without PSRAM it falls back
+// to a short internal-RAM buffer. False only if both fail.
 bool analog_init(analog_data_t *d);
+
+// Microphone buffer size in samples, and whether it is the full PSRAM buffer.
+uint32_t analog_mic_capacity(void);
+bool analog_mic_in_psram(void);
 
 // Starts the ADC scan. False on failure.
 bool analog_start(analog_data_t *d);

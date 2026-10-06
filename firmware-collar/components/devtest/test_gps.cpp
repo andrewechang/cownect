@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sensor_manager.h"
+#include "test_profile.h"
 
 using namespace cownect;
 
@@ -24,16 +25,6 @@ void print_sentence(const char* body, void* ctx)
     }
 }
 
-bool gps_prepare(const char* test)
-{
-    if (!devtest::ensure_idle(test)) return false;
-    if (devtest::rail_on() != ESP_OK || sensors::sensor_set().gps.init() != ESP_OK) {
-        devtest::report_fail(test, "UART init failed");
-        return false;
-    }
-    return true;
-}
-
 void pump(uint32_t duration_ms)
 {
     auto& gps = sensors::sensor_set().gps;
@@ -42,6 +33,47 @@ void pump(uint32_t duration_ms)
         gps.service();
         vTaskDelay(pdMS_TO_TICKS(50));
     }
+}
+
+bool s_baud_detected = false;  // detection runs once per boot; the driver keeps the rate
+
+// Tries each candidate rate until valid NMEA sentences are framed. Leaves the first candidate
+// (the configured 9600) selected when none works, so the test reports the raw statistics.
+void gps_detect_baud()
+{
+    if (s_baud_detected) return;
+    auto& gps = sensors::sensor_set().gps;
+    constexpr uint32_t kListenMs = 2500;  // > 2 NMEA epochs at 1 Hz
+    std::printf("[GPS] baud detection (%u ms per rate):\n", static_cast<unsigned>(kListenMs));
+    for (uint32_t baud : config::test_profile::GPS_BAUD_CANDIDATES) {
+        gps.set_baud(baud);
+        gps.reset_statistics();
+        pump(kListenMs);
+        const auto& s = gps.stats();
+        std::printf("  %6u baud: bytes=%u sentences=%u checksum_err=%u overlength=%u\n", static_cast<unsigned>(baud),
+                    static_cast<unsigned>(s.uart_bytes_received), static_cast<unsigned>(s.framed_sentence_count),
+                    static_cast<unsigned>(s.checksum_error_count), static_cast<unsigned>(s.overlength_count));
+        if (s.framed_sentence_count >= 2) {
+            std::printf("[GPS] using %u baud\n", static_cast<unsigned>(baud));
+            s_baud_detected = true;
+            gps.reset_statistics();
+            return;
+        }
+    }
+    gps.set_baud(config::test_profile::GPS_BAUD_CANDIDATES[0]);
+    gps.reset_statistics();
+    std::printf("[GPS] no rate produced valid NMEA; staying at %u baud\n", static_cast<unsigned>(gps.baud()));
+}
+
+bool gps_prepare(const char* test)
+{
+    if (!devtest::ensure_idle(test)) return false;
+    if (devtest::rail_on() != ESP_OK || sensors::sensor_set().gps.init() != ESP_OK) {
+        devtest::report_fail(test, "UART init failed");
+        return false;
+    }
+    gps_detect_baud();
+    return true;
 }
 
 void print_stats()
@@ -72,8 +104,10 @@ int cmd_gps(int argc, char** argv)
     print_stats();
     const auto& s = gps.stats();
     const bool ok = s.uart_bytes_received > 0 && s.framed_sentence_count > 0;
-    ok ? devtest::report_pass("gps", "NMEA framed at 9600 8N1 (no fix required)")
-       : devtest::report_fail("gps", "no NMEA traffic - check rail, UART direction, module");
+    char detail[64];
+    std::snprintf(detail, sizeof(detail), "NMEA framed at %u 8N1 (no fix required)", static_cast<unsigned>(gps.baud()));
+    ok ? devtest::report_pass("gps", detail)
+       : devtest::report_fail("gps", "no valid NMEA at any tested baud - check rail, UART direction, module");
     devtest::report_hw("gps", "RX on GPIO17 / TX on GPIO18 confirmed by traffic; fix requires sky view");
     return ok ? 0 : 1;
 }

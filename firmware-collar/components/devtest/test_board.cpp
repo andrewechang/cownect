@@ -89,7 +89,11 @@ int cmd_board(int, char**)
                 r.pass ? "PASS" : "FAIL", r.initialized, static_cast<unsigned>(r.psram_size_bytes),
                 static_cast<unsigned>(r.heap_total_bytes), static_cast<unsigned>(r.heap_free_bytes),
                 static_cast<unsigned>(r.test_alloc_bytes), r.test_alloc_ok);
-    std::printf("Mic capture buffer: %s\n", data::capture_storage_microphone_available() ? "allocated" : "UNAVAILABLE");
+    std::printf("Mic capture buffer: %s, %u samples\n",
+                !data::capture_storage_microphone_available() ? "UNAVAILABLE"
+                : data::capture_storage_microphone_in_psram() ? "PSRAM"
+                                                               : "INTERNAL RAM fallback (PSRAM unavailable)",
+                static_cast<unsigned>(data::capture_storage().mic_capacity));
     std::printf("Operation mode: %s\n", operation_mode_name(board_get_operation_mode()));
     std::printf("Peripheral command: %s (physical rail not measured)\n",
                 board_peripherals_commanded_enabled() ? "ON" : "OFF");
@@ -98,7 +102,7 @@ int cmd_board(int, char**)
         return 1;
     }
     if (!data::capture_storage_microphone_available()) {
-        devtest::report_fail("board", "microphone capture buffer could not be allocated in PSRAM");
+        devtest::report_fail("board", "microphone capture buffer could not be allocated (PSRAM or internal RAM)");
         return 1;
     }
     devtest::report_pass("board");

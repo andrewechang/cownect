@@ -325,8 +325,9 @@ esp_err_t Sx1262Adapter::init(const LoraRfProfile& p)
     xSemaphoreTake(irq_sem_, 0);
     profile_applied_ = true;
     state_ = RadioState::STANDBY;
-    ESP_LOGI(TAG, "profile applied f=%uHz bw=%u sf=%u cr=4/%u pwr=%ddBm", static_cast<unsigned>(p.frequency_hz),
-             static_cast<unsigned>(p.bandwidth_hz), p.spreading_factor, p.coding_rate, p.tx_power_dbm);
+    ESP_LOGI(TAG, "profile applied f=%uHz bw=%u sf=%u cr=4/%u pwr=%ddBm paDutyCycle=%u hpMax=%u",
+             static_cast<unsigned>(p.frequency_hz), static_cast<unsigned>(p.bandwidth_hz), p.spreading_factor,
+             p.coding_rate, p.tx_power_dbm, p.pa_duty_cycle, p.pa_hp_max);
     return ESP_OK;
 }
 

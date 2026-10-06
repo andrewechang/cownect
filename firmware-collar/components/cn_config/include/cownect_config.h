@@ -62,6 +62,9 @@ inline constexpr size_t   MIC_EXPECTED_SAMPLES = 960000;
 // Small capacity margin (0.1 s at 32 kS/s) so start/stop phase does not cause artificial
 // destination overflow (Material 8 section 14). Design value.
 inline constexpr size_t   MIC_CAPTURE_MAX_SAMPLES = MIC_EXPECTED_SAMPLES + 3200;
+// Internal-RAM fallback when PSRAM is unavailable (2 s at 32 kS/s, 128 KB): lets the microphone
+// ADC path be tested; a full 30 s capture needs the PSRAM buffer above. Design value.
+inline constexpr size_t   MIC_FALLBACK_MAX_SAMPLES = 64000;
 inline constexpr uint32_t INTEGRATED_ADC_TOTAL_HZ = 64000;  // Material 9 section 4
 inline constexpr uint32_t ADC_CONV_FRAME_BYTES = CONFIG_COWNECT_ADC_CONV_FRAME_BYTES;
 inline constexpr uint32_t ADC_POOL_BYTES = CONFIG_COWNECT_ADC_POOL_BYTES;

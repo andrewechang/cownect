@@ -19,9 +19,12 @@ struct CaptureStorage {
     size_t temp_capacity;
 };
 
-esp_err_t capture_storage_init();  // idempotent; ESP_ERR_NO_MEM if the PSRAM buffer failed
+// Idempotent. Mic buffer in PSRAM (full capture); without PSRAM a short internal-RAM fallback
+// (config::MIC_FALLBACK_MAX_SAMPLES). ESP_ERR_NO_MEM only if both allocations failed.
+esp_err_t capture_storage_init();
 CaptureStorage& capture_storage();
 bool capture_storage_microphone_available();
+bool capture_storage_microphone_in_psram();  // false = fallback buffer (or none)
 
 // The single CaptureSession bound to the storage (no double buffering - Material 13/14/15).
 CaptureSession& capture_session();

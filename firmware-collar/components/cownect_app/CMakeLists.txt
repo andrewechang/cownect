@@ -3,5 +3,5 @@
 idf_component_register(
     SRCS "cownect_app.cpp"
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES board data devtest scheduler power cn_config comm_manager esp_system freertos log
+    PRIV_REQUIRES board data devtest scheduler power cn_config comm_manager esp_system esp_psram freertos log
 )

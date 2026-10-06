@@ -1,13 +1,16 @@
-// wifi_upload.c - Wi-Fi station + one TCP connection per capture.
+// wifi_upload.c - Wi-Fi station + one upload per capture (Jetson TCP or website HTTPS).
 #include "wifi_upload.h"
 #include <stdlib.h>
 #include <string.h>
 #include "config.h"
 #include "capture.h"
 #include "data_format.h"
+#include "esp_crt_bundle.h"
 #include "esp_event.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_tls.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
@@ -20,13 +23,19 @@ static const char *TAG = "wifi";
 static EventGroupHandle_t s_events;
 static bool s_initialized;
 
-// Checks SSID, Jetson IP/port and both timeouts (see wifi_upload.h).
+// Checks SSID, the chosen target's settings and both timeouts (see wifi_upload.h).
 bool wifi_config_ready(void)
 {
     const char *missing = NULL;
     if (strlen(WIFI_SSID) == 0) missing = "WIFI_SSID";
+#if UPLOAD_TARGET == UPLOAD_TO_WEB
+    else if (strlen(WEB_UPLOAD_URL) == 0) missing = "WEB_UPLOAD_URL";
+    else if (strlen(WEB_API_KEY_HEADER) == 0) missing = "WEB_API_KEY_HEADER";
+    else if (strlen(WEB_API_KEY) == 0) missing = "WEB_API_KEY";
+#else
     else if (strlen(JETSON_IP) == 0) missing = "JETSON_IP";
     else if (JETSON_RAW_PORT == 0) missing = "JETSON_RAW_PORT";
+#endif
     else if (WIFI_CONNECT_TIMEOUT_MS == 0) missing = "WIFI_CONNECT_TIMEOUT_MS";
     else if (TCP_SEND_TIMEOUT_MS == 0) missing = "TCP_SEND_TIMEOUT_MS";
     if (missing) {
@@ -71,9 +80,42 @@ static bool wifi_init_once(void)
     return true;
 }
 
-// Keeps calling send() until all len bytes are out. False on error or timeout.
-static bool send_all(int sock, const void *data, size_t len)
+// Writes len bytes to the open connection `ctx`. False on error or timeout.
+typedef bool (*writer_t)(void *ctx, const void *data, size_t len);
+
+// Bytes in one upload: the 21-byte upload header + the capture stream (incl. its tail).
+static uint32_t upload_size(const capture_t *c)
 {
+    return UPLOAD_HEADER_BYTES + stream_size(c);
+}
+
+// Builds the upload and passes it to `write`, in order: the 21-byte upload header,
+// the stream head, the microphone samples straight from PSRAM, and the 12-byte tail.
+// Both targets get exactly these bytes.
+static bool write_capture(const capture_t *c, writer_t write, void *ctx)
+{
+    uint8_t *head = malloc(STREAM_HEAD_MAX);
+    if (!head) {
+        ESP_LOGE(TAG, "no memory for the stream head");
+        return false;
+    }
+    uint8_t hdr[UPLOAD_HEADER_BYTES], tail[STREAM_TAIL_BYTES];
+    size_t hdr_len = build_upload_header(c, stream_size(c), hdr);
+    size_t head_len = build_stream_head(c, head);
+    size_t tail_len = build_stream_tail(tail);
+    // The ESP32 is little-endian, so the uint16 microphone buffer already has the
+    // byte order of the stream format and can be sent as it is.
+    bool ok = write(ctx, hdr, hdr_len) && write(ctx, head, head_len) &&
+              write(ctx, c->analog.mic, c->analog.mic_count * sizeof(uint16_t)) && write(ctx, tail, tail_len);
+    free(head);
+    return ok;
+}
+
+// ---------------------------------------------------------------- Jetson (plain TCP)
+// Keeps calling send() on the socket *ctx until all len bytes are out.
+static bool tcp_write(void *ctx, const void *data, size_t len)
+{
+    int sock = *(int *)ctx;
     const uint8_t *p = data;
     while (len > 0) {
         int n = send(sock, p, len, 0);
@@ -103,35 +145,94 @@ static int open_jetson_socket(void)
     return sock;
 }
 
-// Opens a TCP connection to the Jetson and sends, in order: the 21-byte upload
-// header, the stream head, the microphone samples straight from PSRAM, and the
-// 12-byte tail. Closes the connection afterwards.
-static bool send_capture(const capture_t *c)
+// Opens a TCP connection to the Jetson, sends the upload and closes the connection.
+static bool send_to_jetson(const capture_t *c)
 {
     int sock = open_jetson_socket();
     if (sock < 0) return false;
-
-    uint8_t *head = malloc(STREAM_HEAD_MAX);
-    bool ok = head != NULL;
-    if (ok) {
-        uint32_t total = stream_size(c);
-        uint8_t hdr[UPLOAD_HEADER_BYTES], tail[STREAM_TAIL_BYTES];
-        size_t hdr_len = build_upload_header(c, total, hdr);
-        size_t head_len = build_stream_head(c, head);
-        size_t tail_len = build_stream_tail(tail);
-        // The ESP32 is little-endian, so the uint16 microphone buffer already has the
-        // byte order of the stream format and can be sent as it is.
-        ok = send_all(sock, hdr, hdr_len) && send_all(sock, head, head_len) &&
-             send_all(sock, c->analog.mic, c->analog.mic_count * sizeof(uint16_t)) && send_all(sock, tail, tail_len);
-        if (ok) ESP_LOGI(TAG, "uploaded capture %u: %u bytes", (unsigned)c->capture_id, (unsigned)total);
-        else ESP_LOGE(TAG, "upload interrupted");
-        free(head);
-    }
+    bool ok = write_capture(c, tcp_write, &sock);
+    if (ok) ESP_LOGI(TAG, "uploaded capture %u to the Jetson: %u bytes", (unsigned)c->capture_id,
+                     (unsigned)upload_size(c));
+    else ESP_LOGE(TAG, "upload interrupted");
     shutdown(sock, SHUT_RDWR);
     close(sock);
     return ok;
 }
 
+// ---------------------------------------------------------------- website (HTTPS)
+// Keeps calling esp_http_client_write() on the client `ctx` until all len bytes are out.
+static bool https_write(void *ctx, const void *data, size_t len)
+{
+    const char *p = data;
+    while (len > 0) {
+        int n = esp_http_client_write((esp_http_client_handle_t)ctx, p, (int)len);
+        if (n <= 0) return false;
+        p += n;
+        len -= (size_t)n;
+    }
+    return true;
+}
+
+// POSTs the upload to WEB_UPLOAD_URL with the API key header and checks the reply:
+// 2xx = stored. On any other reply, logs the status and the start of the website's answer.
+static bool send_to_web(const capture_t *c)
+{
+    esp_http_client_config_t cfg = {
+        .url = WEB_UPLOAD_URL, .method = HTTP_METHOD_POST, .timeout_ms = TCP_SEND_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,          // check the certificate against trusted CAs
+    };
+    esp_http_client_handle_t client = esp_http_client_init(&cfg);
+    if (!client) {
+        ESP_LOGE(TAG, "HTTPS client could not be created");
+        return false;
+    }
+    esp_http_client_set_header(client, "Content-Type", "application/octet-stream");
+    esp_http_client_set_header(client, WEB_API_KEY_HEADER, WEB_API_KEY);
+
+    bool ok = false;
+    esp_err_t err = esp_http_client_open(client, (int)upload_size(c));   // connect + handshake + headers
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "cannot connect to %s: %s", WEB_UPLOAD_URL, esp_err_to_name(err));
+    } else if (!write_capture(c, https_write, client)) {
+        ESP_LOGE(TAG, "upload interrupted");
+    } else {
+        esp_http_client_fetch_headers(client);
+        int status = esp_http_client_get_status_code(client);
+        ok = status >= 200 && status < 300;
+        if (ok) {
+            ESP_LOGI(TAG, "uploaded capture %u to the website: %u bytes, HTTP %d", (unsigned)c->capture_id,
+                     (unsigned)upload_size(c), status);
+        } else {
+            char reply[128] = {0};
+            int n = esp_http_client_read(client, reply, sizeof(reply) - 1);
+            ESP_LOGE(TAG, "website did not accept the upload: HTTP %d %s", status, n > 0 ? reply : "");
+            if (status == 401 || status == 403) ESP_LOGE(TAG, "-> check WEB_API_KEY and WEB_API_KEY_HEADER");
+            if (status == 413) ESP_LOGE(TAG, "-> the website's upload size limit is below %u bytes",
+                                        (unsigned)upload_size(c));
+        }
+    }
+    esp_http_client_close(client);
+    esp_http_client_cleanup(client);
+    return ok;
+}
+
+// Looks up the website, opens a connection and completes the HTTPS handshake
+// (certificate checked), then closes it. Nothing is sent, so the API key is not checked.
+static bool web_handshake(void)
+{
+    esp_tls_cfg_t cfg = { .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = TCP_SEND_TIMEOUT_MS };
+    esp_tls_t *tls = esp_tls_init();
+    if (!tls) return false;
+    bool ok = esp_tls_conn_http_new_sync(WEB_UPLOAD_URL, &cfg, tls) == 1;
+    if (ok) ESP_LOGI(TAG, "website %s: HTTPS handshake OK, certificate trusted (nothing sent, API key not checked)",
+                     WEB_UPLOAD_URL);
+    else ESP_LOGE(TAG, "cannot reach %s over HTTPS: name lookup, connection or certificate failed (see esp-tls lines)",
+                  WEB_UPLOAD_URL);
+    esp_tls_conn_destroy(tls);
+    return ok;
+}
+
+// ---------------------------------------------------------------- Wi-Fi
 // Init (first time) -> start + connect -> wait up to WIFI_CONNECT_TIMEOUT_MS for
 // an IP address. Returns true once the router has given us an IP address.
 static bool wifi_connect(void)
@@ -157,17 +258,17 @@ static void wifi_off(void)
     esp_wifi_stop();
 }
 
-// See wifi_upload.h: wifi_connect() -> send_capture() -> wifi_off().
+// See wifi_upload.h: wifi_connect() -> send to the chosen target -> wifi_off().
 bool wifi_upload_capture(const capture_t *c)
 {
     if (!wifi_config_ready()) return false;
-    bool ok = wifi_connect() && send_capture(c);
+    bool ok = wifi_connect() && (UPLOAD_TARGET == UPLOAD_TO_WEB ? send_to_web(c) : send_to_jetson(c));
     wifi_off();
     return ok;
 }
 
-// See wifi_upload.h: wifi_connect() -> log IP and signal -> open + close a TCP
-// connection to the Jetson (nothing is sent) -> wifi_off().
+// See wifi_upload.h: wifi_connect() -> log IP and signal -> check the target
+// without sending anything -> wifi_off().
 bool wifi_test_connection(void)
 {
     bool ok = false;
@@ -178,11 +279,15 @@ bool wifi_test_connection(void)
         esp_wifi_sta_get_ap_info(&ap);
         ESP_LOGI(TAG, "connected to \"%s\": IP " IPSTR ", signal %d dBm, channel %d",
                  WIFI_SSID, IP2STR(&ip.ip), ap.rssi, ap.primary);
-        int sock = open_jetson_socket();
-        if (sock >= 0) {
-            ESP_LOGI(TAG, "Jetson %s:%d accepted the TCP connection (nothing sent)", JETSON_IP, JETSON_RAW_PORT);
-            close(sock);
-            ok = true;
+        if (UPLOAD_TARGET == UPLOAD_TO_WEB) {
+            ok = web_handshake();
+        } else {
+            int sock = open_jetson_socket();
+            if (sock >= 0) {
+                ESP_LOGI(TAG, "Jetson %s:%d accepted the TCP connection (nothing sent)", JETSON_IP, JETSON_RAW_PORT);
+                close(sock);
+                ok = true;
+            }
         }
     }
     wifi_off();

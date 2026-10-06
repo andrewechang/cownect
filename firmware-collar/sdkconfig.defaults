@@ -10,6 +10,9 @@ CONFIG_SPIRAM_SPEED_80M=y
 # Large buffers are placed in PSRAM explicitly with heap_caps_malloc(MALLOC_CAP_SPIRAM)
 # (Material 4 section 8). Ordinary malloc() stays in internal RAM.
 CONFIG_SPIRAM_USE_CAPS_ALLOC=y
+# Boot even if PSRAM is not detected: the boot status line reports it and the microphone uses a
+# short internal-RAM buffer, instead of an abort/reset loop before app_main.
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
 
 # Native USB-C (USB-Serial-JTAG) is the primary development console (Material 4 section 7).
 # UART0 (TXD0/RXD0) remains the backup ROM-download/programming path.

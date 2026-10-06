@@ -13,12 +13,16 @@ static uint8_t last_quality;      // from the latest GGA, attached to the next R
 static uint8_t last_satellites;
 static bool uart_open;
 static bool echo;                 // print every sentence (TEST 6 only)
+static int baud = GPS_BAUD;       // changed only by TEST 6's baud search
 
-// Opens the UART at GPS_BAUD on the GPS pins.
+void gps_set_baud(int b) { baud = b; }
+int gps_get_baud(void) { return baud; }
+
+// Opens the UART at `baud` (normally GPS_BAUD) on the GPS pins.
 bool gps_start(void)
 {
     uart_config_t cfg = {
-        .baud_rate = GPS_BAUD, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
+        .baud_rate = baud, .data_bits = UART_DATA_8_BITS, .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1, .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT,
     };
     if (uart_driver_install(GPS_UART_PORT, 4096, 0, 0, NULL, 0) != ESP_OK) return false;
@@ -30,7 +34,7 @@ bool gps_start(void)
     }
     line_len = 0;
     last_quality = last_satellites = 0;
-    ESP_LOGI(TAG, "UART ready at %d baud", GPS_BAUD);
+    ESP_LOGI(TAG, "UART ready at %d baud", baud);
     return true;
 }
 

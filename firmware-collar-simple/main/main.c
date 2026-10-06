@@ -18,11 +18,20 @@
 #include "wifi_upload.h"
 #include "test_mode.h"
 #include "driver/gpio.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_psram.h"
 #include "esp_sleep.h"
+#include "sdkconfig.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+// The N16R8 module has 8 MB OCTAL PSRAM. A quad-mode build aborts at boot
+// ("quad_psram: PSRAM chip is not connected"), so refuse to build one.
+#if !CONFIG_SPIRAM || !CONFIG_SPIRAM_MODE_OCT
+#error "N16R8 needs CONFIG_SPIRAM=y and CONFIG_SPIRAM_MODE_OCT=y (see sdkconfig.defaults): delete sdkconfig and rebuild"
+#endif
 
 static const char *TAG = "main";
 
@@ -92,6 +101,12 @@ void app_main(void)
     gpio_config(&in);
     sensor_power(false);
 
+    // One line per boot, so every log shows why the chip restarted and whether PSRAM came up.
+    ESP_LOGI(TAG, "[BOOT] reset: %s | PSRAM: %s %u KB | internal RAM free %u KB",
+             reset_reason_text(esp_reset_reason()), esp_psram_is_initialized() ? "OK" : "NOT DETECTED",
+             (unsigned)(esp_psram_is_initialized() ? esp_psram_get_size() / 1024 : 0),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+
     // Bring-up tests instead of the normal cycle (TEST_NUMBER in test_mode.h; 0 = off).
     if (TEST_NUMBER != 0) test_run(&capture);   // never returns
 
@@ -111,7 +126,12 @@ void app_main(void)
         cycle_start = esp_timer_get_time();
     }
 
-    if (!capture_init(&capture)) return;            // no PSRAM: cannot record the microphone
+    if (!capture_init(&capture)) {                  // no microphone buffer at all (PSRAM + fallback failed)
+        // Do not sit awake doing nothing (drains the battery): try again after one cycle.
+        ESP_LOGE(TAG, "no microphone buffer - cannot record; deep sleep and retry");
+        esp_sleep_enable_timer_wakeup((uint64_t)CYCLE_MS * 1000);
+        esp_deep_sleep_start();
+    }
 
     while (true) {
         run_cycle(cycle_start);

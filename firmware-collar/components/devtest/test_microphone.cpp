@@ -63,6 +63,19 @@ const char* mic_problem()
                                                : "";
 }
 
+// Shortens a capture that would overflow the mic buffer (internal-RAM fallback without PSRAM).
+uint32_t fit_to_buffer(uint32_t ms)
+{
+    const size_t capacity = sensors::sensor_set().mic_buffer.capacity;
+    const uint32_t max_ms = static_cast<uint32_t>(capacity * 1000ULL / config::MIC_SAMPLE_RATE_HZ);
+    if (max_ms < 300 || ms + 200 <= max_ms) return ms;
+    const uint32_t fitted = max_ms - 200;  // start/stop margin
+    std::printf("[MIC] buffer holds %u samples (%u ms): capture shortened from %u ms to %u ms (PSRAM unavailable?)\n",
+                static_cast<unsigned>(capacity), static_cast<unsigned>(max_ms), static_cast<unsigned>(ms),
+                static_cast<unsigned>(fitted));
+    return fitted;
+}
+
 }  // namespace
 
 // microphone_run_capture_test (tests 8.2 / 8.3)
@@ -70,7 +83,7 @@ int cmd_microphone(int argc, char** argv)
 {
     if (!devtest::ensure_idle("microphone")) return 1;
     devtest::rail_on();
-    const uint32_t ms = devtest::arg_u32(argc, argv, 1, 30) * 1000;
+    const uint32_t ms = fit_to_buffer(devtest::arg_u32(argc, argv, 1, 30) * 1000);
     if (!mic_run("microphone", ms)) return 1;
     print_mic(ms);
     const bool ok = mic_clean();
@@ -86,7 +99,7 @@ int cmd_mic_stream(int argc, char** argv)
 {
     if (!devtest::ensure_idle("mic_stream")) return 1;
     devtest::rail_on();
-    const uint32_t ms = devtest::arg_u32(argc, argv, 1, 3) * 1000;
+    const uint32_t ms = fit_to_buffer(devtest::arg_u32(argc, argv, 1, 3) * 1000);
     if (!mic_run("mic_stream", ms)) return 1;
     print_mic(ms);
     const auto& a = sensors::analog_engine().stats();

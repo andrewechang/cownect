@@ -42,3 +42,7 @@ void gps_stop(void);
 
 // Bring-up help (test_mode.c): true = print every complete NMEA sentence as it arrives.
 void gps_set_echo(bool on);
+
+// Bring-up help (TEST 6): baud rate used by the next gps_start() (default GPS_BAUD).
+void gps_set_baud(int baud);
+int gps_get_baud(void);
