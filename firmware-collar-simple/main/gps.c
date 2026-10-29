@@ -14,9 +14,11 @@ static uint8_t last_satellites;
 static bool uart_open;
 static bool echo;                 // print every sentence (TEST 6 only)
 static int baud = GPS_BAUD;       // changed only by TEST 6's baud search
+static uint32_t rx_bytes;         // every byte since gps_start() (TEST 6 only)
 
 void gps_set_baud(int b) { baud = b; }
 int gps_get_baud(void) { return baud; }
+uint32_t gps_get_rx_bytes(void) { return rx_bytes; }
 
 // Opens the UART at `baud` (normally GPS_BAUD) on the GPS pins.
 bool gps_start(void)
@@ -33,6 +35,7 @@ bool gps_start(void)
         return false;
     }
     line_len = 0;
+    rx_bytes = 0;
     last_quality = last_satellites = 0;
     ESP_LOGI(TAG, "UART ready at %d baud", baud);
     return true;
@@ -102,6 +105,7 @@ void gps_read(gps_data_t *g, uint32_t time_ms)
     uint8_t buf[128];
     int got;
     while ((got = uart_read_bytes(GPS_UART_PORT, buf, sizeof(buf), 0)) > 0) {
+        rx_bytes += got;
         for (int i = 0; i < got; i++) {
             char c = (char)buf[i];
             if (c == '$') line_len = 0;

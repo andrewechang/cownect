@@ -46,3 +46,6 @@ void gps_set_echo(bool on);
 // Bring-up help (TEST 6): baud rate used by the next gps_start() (default GPS_BAUD).
 void gps_set_baud(int baud);
 int gps_get_baud(void);
+
+// Bring-up help (TEST 6): bytes received since the last gps_start(), valid or not.
+uint32_t gps_get_rx_bytes(void);

@@ -254,6 +254,61 @@ static result_t test_5_temps(capture_t *c)
 // one that works is used for the rest of the test (the normal firmware keeps GPS_BAUD).
 static const int GPS_BAUD_CANDIDATES[] = {GPS_BAUD, 115200, 38400, 57600, 19200, 4800};
 
+// Line check, before the UART opens: reads GPIO17 (GPS TXD) for 1.1 s with the ESP32's
+// weak pull-up, then 1.1 s with its weak pull-down. A powered, connected GPS drives the
+// line itself (HIGH between sentences, toggling while it sends), so the pulls cannot move
+// it; a line nobody drives follows the pull. The two reads together say where the fault is.
+typedef struct { uint32_t high, low, edges; } line_sample_t;
+
+static line_sample_t sample_gps_line(gpio_pull_mode_t pull)
+{
+    line_sample_t s = {0};
+    gpio_reset_pin(PIN_GPS_RX);
+    gpio_set_direction(PIN_GPS_RX, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(PIN_GPS_RX, pull);
+    vTaskDelay(pdMS_TO_TICKS(10));                 // let the weak pull settle the line
+    int last = gpio_get_level(PIN_GPS_RX);
+    int64_t start = esp_timer_get_time(), chunk = start;
+    while (ms_since(start) < 1100) {               // > 1 s: catches one burst of NMEA
+        int level = gpio_get_level(PIN_GPS_RX);
+        if (level) s.high++; else s.low++;
+        if (level != last) s.edges++;
+        last = level;
+        if (esp_timer_get_time() - chunk > 5000) {  // let the idle task run (task watchdog)
+            vTaskDelay(1);
+            chunk = esp_timer_get_time();
+        }
+    }
+    gpio_reset_pin(PIN_GPS_RX);
+    return s;
+}
+
+static void gps_line_check(void)
+{
+    line_sample_t up = sample_gps_line(GPIO_PULLUP_ONLY);
+    line_sample_t down = sample_gps_line(GPIO_PULLDOWN_ONLY);
+    ESP_LOGI(TAG, "GPIO%d line check: pull-up   -> %s (high %u, low %u, edges %u)", PIN_GPS_RX,
+             up.high > up.low ? "HIGH" : "LOW", (unsigned)up.high, (unsigned)up.low, (unsigned)up.edges);
+    ESP_LOGI(TAG, "GPIO%d line check: pull-down -> %s (high %u, low %u, edges %u)", PIN_GPS_RX,
+             down.high > down.low ? "HIGH" : "LOW", (unsigned)down.high, (unsigned)down.low, (unsigned)down.edges);
+
+    // A driven UART line toggles under BOTH pulls (every byte starts with a LOW start bit).
+    // Edges under only one pull are noise on a line nobody drives.
+    bool up_high = up.high > up.low, down_high = down.high > down.low;
+    if (up.edges > 20 && down.edges > 20)
+        ESP_LOGI(TAG, "-> line TOGGLES: the GPS is sending data (if the UART still gets nothing, suspect GPIO%d)",
+                 PIN_GPS_RX);
+    else if (up_high && down_high)
+        ESP_LOGW(TAG, "-> line DRIVEN HIGH: the GPS is powered and connected, but sends nothing (module fault?)");
+    else if (up_high && !down_high)
+        ESP_LOGE(TAG, "-> line FLOATING%s: GPS TXD is not connected to GPIO%d (solder on GPS pin 2, or the trace)",
+                 (up.edges > 20 || down.edges > 20) ? " (picks up noise)" : "", PIN_GPS_RX);
+    else if (!up_high && !down_high)
+        ESP_LOGE(TAG, "-> line HELD LOW: GPS has no power (check VCC, GPS pin 8) or TXD is shorted to GND");
+    else
+        ESP_LOGW(TAG, "-> unexpected: HIGH only with the pull-down (noisy line?)");
+}
+
 // Listens 2.5 s (> 2 NMEA sentences at 1 per second) at each rate until good sentences arrive.
 static void gps_find_baud(capture_t *c)
 {
@@ -267,8 +322,9 @@ static void gps_find_baud(capture_t *c)
             vTaskDelay(pdMS_TO_TICKS(20));
         }
         gps_stop();
-        ESP_LOGI(TAG, "%6d baud: %s (bad sentences %u)", GPS_BAUD_CANDIDATES[i],
-                 c->gps.uart_ok ? "good NMEA" : "nothing usable", (unsigned)c->gps.bad_sentences);
+        ESP_LOGI(TAG, "%6d baud: %s (bytes %u, bad sentences %u)", GPS_BAUD_CANDIDATES[i],
+                 c->gps.uart_ok ? "good NMEA" : "nothing usable", (unsigned)gps_get_rx_bytes(),
+                 (unsigned)c->gps.bad_sentences);
         if (c->gps.uart_ok) {
             if (GPS_BAUD_CANDIDATES[i] != GPS_BAUD)
                 ESP_LOGW(TAG, "the GPS talks at %d baud, not GPS_BAUD %d: change GPS_BAUD in gps.h",
@@ -282,6 +338,7 @@ static void gps_find_baud(capture_t *c)
 
 static result_t test_6_gps(capture_t *c)
 {
+    gps_line_check();
     gps_find_baud(c);
     clear_capture(c);
     if (!gps_start()) {
@@ -303,8 +360,9 @@ static result_t test_6_gps(capture_t *c)
         if (c->gps.fixes[i].valid) { valid++; last_valid = &c->gps.fixes[i]; }
     }
     uint32_t sats = c->gps.count ? c->gps.fixes[c->gps.count - 1].satellites : 0;
-    ESP_LOGI(TAG, "%u position messages (RMC), %u with a fix | satellites %u | bad sentences %u",
-             (unsigned)c->gps.count, (unsigned)valid, (unsigned)sats, (unsigned)c->gps.bad_sentences);
+    ESP_LOGI(TAG, "%u position messages (RMC), %u with a fix | satellites %u | bytes %u, bad sentences %u",
+             (unsigned)c->gps.count, (unsigned)valid, (unsigned)sats, (unsigned)gps_get_rx_bytes(),
+             (unsigned)c->gps.bad_sentences);
     if (last_valid) {
         ESP_LOGI(TAG, "position %.7f, %.7f | speed %.1f m/s", last_valid->lat_e7 / 1e7,
                  last_valid->lon_e7 / 1e7, last_valid->speed_mps);
