@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import CowMap from './components/CowMap'
+import CowMap from './components/cowMap'
 import { useCowReadings } from './hooks/useCowReadings'
 import './App.css'
 
