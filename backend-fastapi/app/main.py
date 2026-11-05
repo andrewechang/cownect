@@ -7,6 +7,13 @@ from .database import Base, engine, get_db
 from .models import SensorReading
 from .schemas import SensorReadingCreate, SensorReadingResponse
 
+
+app = FastAPI(
+    title="CowNect Backend API",
+    version="0.1.0",
+)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -18,15 +25,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 Base.metadata.create_all(bind=engine)
-
-
-#creates the FastAPI application
-app = FastAPI(
-    title="Cownect Backend API",
-    version="0.1.0",
-)
-
 
 #message used to check if API is healthy
 @app.get("/health")
