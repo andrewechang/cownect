@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -6,23 +7,17 @@ from .database import Base, engine, get_db
 from .models import SensorReading
 from .schemas import SensorReadingCreate, SensorReadingResponse
 
-from fastapi.middleware.cors import CORSMiddleware
-app = FastAPI(
-    title="CowNect Backend API",
-    version="0.1.0",
-)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "https://cownect-app-dashboard.onrender.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-#creates any missing tables when the API starts up
 Base.metadata.create_all(bind=engine)
 
 

@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-dotenv()
+load_dotenv()
 
 import requests
 import serial
