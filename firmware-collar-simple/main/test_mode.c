@@ -237,8 +237,11 @@ static result_t test_5_temps(capture_t *c)
         cow_ok |= t->valid;
         if (t->valid) ESP_LOGI(TAG, "cow   %u s: raw %4d  %4d mV  %6.0f ohm -> %.2f C",
                                (unsigned)i, (int)t->adc_raw, (int)t->mv, t->resistance_ohm, t->temp_c);
-        else ESP_LOGW(TAG, "cow   %u s: raw %4d  %4d mV  -> INVALID (probe unplugged or shorted?)",
-                      (unsigned)i, (int)t->adc_raw, (int)t->mv);
+        else ESP_LOGW(TAG, "cow   %u s: raw %4d  %4d mV  -> INVALID: %s", (unsigned)i, (int)t->adc_raw,
+                      (int)t->mv,
+                      t->status == TEMP_OPEN    ? "probe DISCONNECTED (open circuit)" :
+                      t->status == TEMP_SHORT   ? "probe SHORTED (short circuit)" :
+                      t->status == TEMP_CAL_UNAVAILABLE ? "no ADC calibration" : "voltage out of range");
     }
     if (c->analog.board_count == 0 && c->analog.cow_count == 0) ESP_LOGE(TAG, "no temperature values");
     return (board_ok && cow_ok) ? RESULT_PASS : RESULT_FAIL;
@@ -254,23 +257,24 @@ static result_t test_5_temps(capture_t *c)
 // one that works is used for the rest of the test (the normal firmware keeps GPS_BAUD).
 static const int GPS_BAUD_CANDIDATES[] = {GPS_BAUD, 115200, 38400, 57600, 19200, 4800};
 
-// Line check, before the UART opens: reads GPIO17 (GPS TXD) for 1.1 s with the ESP32's
-// weak pull-up, then 1.1 s with its weak pull-down. A powered, connected GPS drives the
+// Line check, before the UART opens: reads one pin for 1.1 s with the ESP32's weak
+// pull-up, then 1.1 s with its weak pull-down. A powered, connected GPS drives the
 // line itself (HIGH between sentences, toggling while it sends), so the pulls cannot move
-// it; a line nobody drives follows the pull. The two reads together say where the fault is.
+// it; a line nobody drives follows the pull. Both GPIO17 (GPS TXD) and GPIO18 (GPS RXD)
+// are checked, so a swapped or bridged TXD shows up as data on GPIO18.
 typedef struct { uint32_t high, low, edges; } line_sample_t;
 
-static line_sample_t sample_gps_line(gpio_pull_mode_t pull)
+static line_sample_t sample_line(int pin, gpio_pull_mode_t pull)
 {
     line_sample_t s = {0};
-    gpio_reset_pin(PIN_GPS_RX);
-    gpio_set_direction(PIN_GPS_RX, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(PIN_GPS_RX, pull);
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(pin, pull);
     vTaskDelay(pdMS_TO_TICKS(10));                 // let the weak pull settle the line
-    int last = gpio_get_level(PIN_GPS_RX);
+    int last = gpio_get_level(pin);
     int64_t start = esp_timer_get_time(), chunk = start;
     while (ms_since(start) < 1100) {               // > 1 s: catches one burst of NMEA
-        int level = gpio_get_level(PIN_GPS_RX);
+        int level = gpio_get_level(pin);
         if (level) s.high++; else s.low++;
         if (level != last) s.edges++;
         last = level;
@@ -279,43 +283,46 @@ static line_sample_t sample_gps_line(gpio_pull_mode_t pull)
             chunk = esp_timer_get_time();
         }
     }
-    gpio_reset_pin(PIN_GPS_RX);
+    gpio_reset_pin(pin);
     return s;
 }
 
-static void gps_line_check(void)
+// Prints the result for one pin. True = the line toggles (someone sends data on it).
+static bool line_check(int pin, const char *name)
 {
-    line_sample_t up = sample_gps_line(GPIO_PULLUP_ONLY);
-    line_sample_t down = sample_gps_line(GPIO_PULLDOWN_ONLY);
-    ESP_LOGI(TAG, "GPIO%d line check: pull-up   -> %s (high %u, low %u, edges %u)", PIN_GPS_RX,
+    line_sample_t up = sample_line(pin, GPIO_PULLUP_ONLY);
+    line_sample_t down = sample_line(pin, GPIO_PULLDOWN_ONLY);
+    ESP_LOGI(TAG, "GPIO%d (%s) pull-up   -> %s (high %u, low %u, edges %u)", pin, name,
              up.high > up.low ? "HIGH" : "LOW", (unsigned)up.high, (unsigned)up.low, (unsigned)up.edges);
-    ESP_LOGI(TAG, "GPIO%d line check: pull-down -> %s (high %u, low %u, edges %u)", PIN_GPS_RX,
+    ESP_LOGI(TAG, "GPIO%d (%s) pull-down -> %s (high %u, low %u, edges %u)", pin, name,
              down.high > down.low ? "HIGH" : "LOW", (unsigned)down.high, (unsigned)down.low, (unsigned)down.edges);
 
     // A driven UART line toggles under BOTH pulls (every byte starts with a LOW start bit).
     // Edges under only one pull are noise on a line nobody drives.
     bool up_high = up.high > up.low, down_high = down.high > down.low;
-    if (up.edges > 20 && down.edges > 20)
-        ESP_LOGI(TAG, "-> line TOGGLES: the GPS is sending data (if the UART still gets nothing, suspect GPIO%d)",
-                 PIN_GPS_RX);
+    bool toggles = up.edges > 20 && down.edges > 20;
+    if (toggles)
+        ESP_LOGI(TAG, "-> GPIO%d TOGGLES: data arrives on this pin", pin);
     else if (up_high && down_high)
-        ESP_LOGW(TAG, "-> line DRIVEN HIGH: the GPS is powered and connected, but sends nothing (module fault?)");
+        ESP_LOGW(TAG, "-> GPIO%d DRIVEN HIGH: connected and powered, but no data on it", pin);
     else if (up_high && !down_high)
-        ESP_LOGE(TAG, "-> line FLOATING%s: GPS TXD is not connected to GPIO%d (solder on GPS pin 2, or the trace)",
-                 (up.edges > 20 || down.edges > 20) ? " (picks up noise)" : "", PIN_GPS_RX);
+        ESP_LOGE(TAG, "-> GPIO%d FLOATING%s: nothing drives this pin", pin,
+                 (up.edges > 20 || down.edges > 20) ? " (picks up noise)" : "");
     else if (!up_high && !down_high)
-        ESP_LOGE(TAG, "-> line HELD LOW: GPS has no power (check VCC, GPS pin 8) or TXD is shorted to GND");
+        ESP_LOGE(TAG, "-> GPIO%d HELD LOW: no power on the other side, or shorted to GND", pin);
     else
-        ESP_LOGW(TAG, "-> unexpected: HIGH only with the pull-down (noisy line?)");
+        ESP_LOGW(TAG, "-> GPIO%d unexpected: HIGH only with the pull-down (noisy line?)", pin);
+    return toggles;
 }
 
-// Listens 2.5 s (> 2 NMEA sentences at 1 per second) at each rate until good sentences arrive.
-static void gps_find_baud(capture_t *c)
+// Listens 2.5 s (> 2 NMEA sentences at 1 per second) at each rate until good sentences
+// arrive. True = found (the rate stays set for the rest of the test).
+static bool gps_find_baud(capture_t *c)
 {
     for (int i = 0; i < (int)(sizeof(GPS_BAUD_CANDIDATES) / sizeof(GPS_BAUD_CANDIDATES[0])); i++) {
         clear_capture(c);
         gps_set_baud(GPS_BAUD_CANDIDATES[i]);
-        if (!gps_start()) return;
+        if (!gps_start()) return false;
         int64_t start = esp_timer_get_time();
         while (ms_since(start) < 2500) {
             gps_read(&c->gps, ms_since(start));
@@ -329,17 +336,32 @@ static void gps_find_baud(capture_t *c)
             if (GPS_BAUD_CANDIDATES[i] != GPS_BAUD)
                 ESP_LOGW(TAG, "the GPS talks at %d baud, not GPS_BAUD %d: change GPS_BAUD in gps.h",
                          GPS_BAUD_CANDIDATES[i], GPS_BAUD);
-            return;
+            return true;
         }
     }
     gps_set_baud(GPS_BAUD);
     ESP_LOGE(TAG, "no rate gave good NMEA: staying at %d baud", GPS_BAUD);
+    return false;
 }
 
 static result_t test_6_gps(capture_t *c)
 {
-    gps_line_check();
-    gps_find_baud(c);
+    bool rx_toggles = line_check(PIN_GPS_RX, "ESP32 RX <- GPS TXD");
+    bool tx_toggles = line_check(PIN_GPS_TX, "ESP32 TX -> GPS RXD");
+    if (rx_toggles && tx_toggles)
+        ESP_LOGW(TAG, "-> data on BOTH pins: GPIO%d and GPIO%d look bridged (solder short?)", PIN_GPS_RX, PIN_GPS_TX);
+    else if (!rx_toggles && tx_toggles)
+        ESP_LOGW(TAG, "-> data only on GPIO%d: GPS TXD reaches the TX pin (swapped wires?)", PIN_GPS_TX);
+
+    gps_set_pins(PIN_GPS_RX, PIN_GPS_TX);
+    if (!gps_find_baud(c)) {
+        ESP_LOGW(TAG, "trying again with the pins SWAPPED (RX GPIO%d, TX GPIO%d)", PIN_GPS_TX, PIN_GPS_RX);
+        gps_set_pins(PIN_GPS_TX, PIN_GPS_RX);
+        if (gps_find_baud(c))
+            ESP_LOGW(TAG, "-> GPS works with SWAPPED pins: GPS TXD is wired to GPIO%d, not GPIO%d", PIN_GPS_TX, PIN_GPS_RX);
+        else
+            gps_set_pins(PIN_GPS_RX, PIN_GPS_TX);
+    }
     clear_capture(c);
     if (!gps_start()) {
         ESP_LOGE(TAG, "GPS UART could not be started");
@@ -353,6 +375,7 @@ static result_t test_6_gps(capture_t *c)
     }
     gps_set_echo(false);
     gps_stop();
+    gps_set_pins(PIN_GPS_RX, PIN_GPS_TX);   // the normal firmware always uses config.h pins
 
     const gps_fix_t *last_valid = NULL;
     uint32_t valid = 0;

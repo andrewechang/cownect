@@ -29,7 +29,7 @@ enum {
     CAP_MIC_LOST        = 1u << 8,   // ADC buffer overflowed (audio samples lost)
     CAP_GPS_BAD_TEXT    = 1u << 9,   // GPS sentences with checksum errors
     CAP_COW_PROBE_FAULT = 1u << 10,  // cow readings exist but none is valid (probe unplugged/shorted?)
-    CAP_MIC_CLIPPED     = 1u << 11,  // NEW: microphone signal hit the ADC limits
+    CAP_MIC_CLIPPED     = 1u << 11,  // microphone signal hit the ADC limits
 };
 
 // ---------------------------------------------------------------- summary (LoRa telemetry)
@@ -47,7 +47,7 @@ enum {
     SUM_SOMETHING_LOST = 1u << 0, SUM_ACCEL_ERROR = 1u << 1, SUM_GPS_NO_FIX = 1u << 2,
     SUM_MIC_ERROR = 1u << 3, SUM_BOARD_TEMP_ERROR = 1u << 4, SUM_COW_TEMP_ERROR = 1u << 5,
     SUM_COW_PROBE_FAULT = 1u << 6, SUM_ADC_ERROR = 1u << 7, SUM_CYCLE_OVERRUN = 1u << 8,
-    SUM_MIC_CLIPPED = 1u << 9,       // NEW
+    SUM_MIC_CLIPPED = 1u << 9,
 };
 
 // Reserves the microphone buffer (call once after boot). False if there is no PSRAM.

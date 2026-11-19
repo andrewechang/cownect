@@ -49,3 +49,6 @@ int gps_get_baud(void);
 
 // Bring-up help (TEST 6): bytes received since the last gps_start(), valid or not.
 uint32_t gps_get_rx_bytes(void);
+
+// Bring-up help (TEST 6): UART pins used by the next gps_start() (default PIN_GPS_RX / PIN_GPS_TX).
+void gps_set_pins(int rx, int tx);

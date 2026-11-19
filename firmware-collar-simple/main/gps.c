@@ -15,10 +15,13 @@ static bool uart_open;
 static bool echo;                 // print every sentence (TEST 6 only)
 static int baud = GPS_BAUD;       // changed only by TEST 6's baud search
 static uint32_t rx_bytes;         // every byte since gps_start() (TEST 6 only)
+static int pin_rx = PIN_GPS_RX;   // changed only by TEST 6's swapped-pin try
+static int pin_tx = PIN_GPS_TX;
 
 void gps_set_baud(int b) { baud = b; }
 int gps_get_baud(void) { return baud; }
 uint32_t gps_get_rx_bytes(void) { return rx_bytes; }
+void gps_set_pins(int rx, int tx) { pin_rx = rx; pin_tx = tx; }
 
 // Opens the UART at `baud` (normally GPS_BAUD) on the GPS pins.
 bool gps_start(void)
@@ -30,14 +33,14 @@ bool gps_start(void)
     if (uart_driver_install(GPS_UART_PORT, 4096, 0, 0, NULL, 0) != ESP_OK) return false;
     uart_open = true;
     if (uart_param_config(GPS_UART_PORT, &cfg) != ESP_OK ||
-        uart_set_pin(GPS_UART_PORT, PIN_GPS_TX, PIN_GPS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
+        uart_set_pin(GPS_UART_PORT, pin_tx, pin_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
         gps_stop();
         return false;
     }
     line_len = 0;
     rx_bytes = 0;
     last_quality = last_satellites = 0;
-    ESP_LOGI(TAG, "UART ready at %d baud", baud);
+    ESP_LOGI(TAG, "UART ready at %d baud (RX GPIO%d, TX GPIO%d)", baud, pin_rx, pin_tx);
     return true;
 }
 

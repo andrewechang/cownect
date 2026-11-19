@@ -1,6 +1,7 @@
 // capture.c - records all sensors at the same time, then checks and summarises the data.
 #include "capture.h"
 #include <math.h>
+#include "config.h"
 #include <string.h>
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -61,7 +62,16 @@ void capture_run(capture_t *c, uint32_t capture_id)
              (unsigned)c->analog.mic_count, (unsigned)(MIC_SAMPLE_RATE_HZ * (CAPTURE_MS / 1000)),
              (unsigned)c->analog.overflows, (unsigned)c->analog.mic_clipped,
              c->analog.mic_count ? 100.0 * c->analog.mic_clipped / c->analog.mic_count : 0.0);
-    ESP_LOGI(TAG, "  temps: board %u values, cow %u values", (unsigned)c->analog.board_count, (unsigned)c->analog.cow_count);
+    uint32_t cow_valid = 0, cow_open = 0, cow_short = 0;
+    for (uint32_t i = 0; i < c->analog.cow_count; i++) {
+        cow_valid += c->analog.cow[i].status == TEMP_OK;
+        cow_open += c->analog.cow[i].status == TEMP_OPEN;
+        cow_short += c->analog.cow[i].status == TEMP_SHORT;
+    }
+    ESP_LOGI(TAG, "  temps: board %u values, cow %u values (%u valid)%s%s", (unsigned)c->analog.board_count,
+             (unsigned)c->analog.cow_count, (unsigned)cow_valid,
+             cow_open ? "  <- probe DISCONNECTED (open circuit)" : "",
+             cow_short ? "  <- probe SHORTED" : "");
 }
 
 // Returns true if any of the n temperature values is valid.
@@ -119,7 +129,12 @@ void capture_summary(const capture_t *c, bool last_cycle_overrun, summary_t *s)
     s->board_valid = average_temp(c->analog.board, c->analog.board_count, &s->board_temp_c);
     s->cow_valid = average_temp(c->analog.cow, c->analog.cow_count, &s->cow_temp_c);
 
-    if (c->accel.count > 0) {
+    s->accel_valid = c->accel.count > 0;
+    s->mic_valid = c->analog.mic_count > 0;
+#if COMM_MODE == COMM_HYBRID
+    // accel mean/RMS and mic RMS go only into the 49-byte telemetry (HYBRID). In LORA_FULL the
+    // feature packet replaces them, so the full pass over all microphone samples is skipped.
+    if (s->accel_valid) {
         const float g_per_digit = ACCEL_MG_PER_DIGIT / 1000.0f;
         double sum = 0, sum_sq = 0;
         for (uint32_t i = 0; i < c->accel.count; i++) {
@@ -130,12 +145,11 @@ void capture_summary(const capture_t *c, bool last_cycle_overrun, summary_t *s)
             sum += mag;
             sum_sq += (double)mag * mag;
         }
-        s->accel_valid = true;
         s->accel_mean_g = (float)(sum / c->accel.count);
         s->accel_rms_g = (float)sqrt(sum_sq / c->accel.count);
     }
 
-    if (c->analog.mic_count > 0) {
+    if (s->mic_valid) {
         double sum = 0, sum_sq = 0;
         for (uint32_t i = 0; i < c->analog.mic_count; i++) {
             sum += c->analog.mic[i];
@@ -143,9 +157,9 @@ void capture_summary(const capture_t *c, bool last_cycle_overrun, summary_t *s)
         }
         double mean = sum / c->analog.mic_count;
         double variance = sum_sq / c->analog.mic_count - mean * mean;
-        s->mic_valid = true;
         s->mic_rms = (float)sqrt(variance > 0 ? variance : 0);
     }
+#endif
 
     uint32_t cap = capture_flags(c);
     if (cap & (CAP_ACCEL_LOST | CAP_MIC_LOST | CAP_GPS_BAD_TEXT)) s->flags |= SUM_SOMETHING_LOST;
@@ -159,6 +173,11 @@ void capture_summary(const capture_t *c, bool last_cycle_overrun, summary_t *s)
     if (last_cycle_overrun) s->flags |= SUM_CYCLE_OVERRUN;
     if (cap & CAP_MIC_CLIPPED) s->flags |= SUM_MIC_CLIPPED;
 
+#if COMM_MODE == COMM_HYBRID
     ESP_LOGI(TAG, "summary: board %.2f C | cow %.2f C | accel mean %.3f g | mic rms %.1f | flags 0x%03X",
              s->board_temp_c, s->cow_temp_c, s->accel_mean_g, s->mic_rms, (unsigned)s->flags);
+#else
+    ESP_LOGI(TAG, "summary: board %.2f C | cow %.2f C | flags 0x%03X",
+             s->board_temp_c, s->cow_temp_c, (unsigned)s->flags);
+#endif
 }

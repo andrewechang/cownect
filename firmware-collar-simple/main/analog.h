@@ -25,6 +25,11 @@
 #define NTC_BETA               3950.0f
 #define NTC_FIXED_R_OHM        10000.0f   // other resistor in the divider
 #define NTC_SUPPLY_MV          3300.0f    // divider supply (nominal, not measured)
+// Cow probe fault detection on the raw ADC code (0..4095). The thermistor sits on the
+// measured side of the divider, so an unplugged probe pulls the input to the top rail
+// and a shorted one to 0. Readings this close to the rails are faults, not temperatures.
+#define COW_ADC_OPEN_RAW       4000       // at or above: probe open / unplugged
+#define COW_ADC_SHORT_RAW      100        // at or below: probe shorted
 // ================================================================
 
 #define ADC_TOTAL_HZ           (2 * MIC_SAMPLE_RATE_HZ)
@@ -33,13 +38,24 @@
 // Without PSRAM: a short buffer in internal RAM (2 s, 128 KB) so the microphone can still be tested
 #define MIC_FALLBACK_SAMPLES   (MIC_SAMPLE_RATE_HZ * 2)
 
+// Why a temperature value is (in)valid. Same codes as the capture stream status byte
+// (firmware-collar/docs/protocols.md); codes this version never produces are left out.
+typedef enum {
+    TEMP_OK              = 0,
+    TEMP_CAL_UNAVAILABLE = 2,  // no ADC calibration -> no millivolts
+    TEMP_INVALID_VOLTAGE = 3,  // millivolts outside the sensor's range
+    TEMP_OPEN            = 5,  // cow probe: open circuit (unplugged / broken wire)
+    TEMP_SHORT           = 6,  // cow probe: short circuit
+} temp_status_t;
+
 typedef struct {
     uint32_t time_ms;
     int32_t adc_raw;           // average raw ADC code over TEMP_EVERY_MS
     int32_t mv;                // calibrated millivolts (-1 = no calibration)
     float resistance_ohm;      // cow thermistor only (NAN for the board sensor)
     float temp_c;              // NAN when invalid
-    bool valid;
+    bool valid;                // status == TEMP_OK
+    temp_status_t status;
 } temp_sample_t;
 
 typedef struct {
