@@ -41,11 +41,11 @@ def create_database_reading(telemetry):
         # The current receiver packet provides microphone RMS.
         "microphone_level_derivative": telemetry.get("mic_rms"),
 
-        # These fields are not currently included in the receiver's
-        # JSON packet, so they remain empty in PostgreSQL.
-        "accel_x_derivative": None,
-        "accel_y_derivative": None,
-        "accel_z_derivative": None,
+        # Sent in "features" packets only (average |da/dt|, g/s);
+        # telemetry packets don't have them, so they stay empty.
+        "accel_x_derivative": telemetry.get("accel_x_derivative"),
+        "accel_y_derivative": telemetry.get("accel_y_derivative"),
+        "accel_z_derivative": telemetry.get("accel_z_derivative"),
         "battery_voltage": None,
         "activity": None,
         "confidence": None,
@@ -85,9 +85,17 @@ try:
             except json.JSONDecodeError:
                 continue
 
-            # Only process valid telemetry JSON objects.
-            if telemetry.get("type") != "telemetry":
+            # Only process valid packets: "telemetry" (HYBRID) or "features" (LORA_FULL).
+            if telemetry.get("type") not in ("telemetry", "features"):
                 continue
+
+            # Keep the full features packet (per-block values) in a local log.
+            if telemetry.get("type") == "features":
+                try:
+                    with open("features_log.jsonl", "a", encoding="utf-8") as log_file:
+                        log_file.write(json.dumps({**telemetry, "received_at": datetime.now(timezone.utc).isoformat()}) + "\n")
+                except OSError as error:
+                    print(f"Could not save features packet: {error}")
 
             try:
                 database_reading = create_database_reading(telemetry)
