@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -60,18 +60,26 @@ def create_reading(
     return database_reading
 
 
-#returns the 100 latest readings
+# Returns readings, optionally filtered by collar.
 @app.get(
     "/api/v1/readings",
     response_model=list[SensorReadingResponse],
 )
-def get_readings(db: Session = Depends(get_db)):
-    #places newest readings first
+def get_readings(
+    collar_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=1000),
+    db: Session = Depends(get_db),
+):
+    query = select(SensorReading)
+
+    # If a collar is specified, only return that collar's readings.
+    if collar_id is not None:
+        query = query.where(SensorReading.collar_id == collar_id)
+
     query = (
-        select(SensorReading)
+        query
         .order_by(SensorReading.recorded_at.desc())
-        .limit(100)
+        .limit(limit)
     )
 
-    #runs query and returns the results as a list of SensorReading objects
     return db.scalars(query).all()

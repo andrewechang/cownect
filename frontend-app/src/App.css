@@ -72,15 +72,64 @@
 .details-card {
   position: absolute;
   right: 24px;
+  top: 24px;
   bottom: 24px;
-  width: 280px;
+  width: min(720px, calc(100% - 48px));
   padding: 20px;
   border-radius: 14px;
   background: white;
   box-shadow: 0 8px 30px rgb(0 0 0 / 15%);
   z-index: 1000;
+  overflow-y: auto;
 }
 
 .error {
   color: #b3261e;
+}
+
+.current-reading {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #dfe5dc;
+}
+
+.details-card h3 {
+  margin: 16px 0 10px;
+  font-size: 15px;
+}
+
+.details-card p {
+  margin: 7px 0;
+}
+
+.history-section {
+  margin-top: 8px;
+}
+
+.history-table-wrapper {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.history-table th,
+.history-table td {
+  padding: 7px 6px;
+  text-align: left;
+  border-bottom: 1px solid #e5e9e2;
+}
+
+.history-table th {
+  color: #536253;
+  background: #f4f6f1;
+  font-weight: 600;
+}
+
+.history-table tr:hover {
+  background: #f7faf5;
 }
