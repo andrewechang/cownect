@@ -5,7 +5,13 @@ import { getCollarHistory } from './services/api'
 import './App.css'
 
 function App() {
-  const { cows, loading, error, reload } = useCowReadings()
+  const {
+  cows,
+  histories,
+  loading,
+  error,
+  reload,
+} = useCowReadings()
 
   const [selectedCow, setSelectedCow] = useState(null)
   const [history, setHistory] = useState([])
@@ -87,6 +93,7 @@ function App() {
         <section className="map-section">
           <CowMap
             cows={cows}
+            histories={histories}
             onSelectCow={setSelectedCow}
           />
 

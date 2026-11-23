@@ -12,9 +12,9 @@ export async function getReadings(options = {}) {
     params.set('limit', options.limit)
   }
 
-  const queryString = params.toString()
+  const query = params.toString()
   const url = `${API_BASE_URL}/api/v1/readings${
-    queryString ? `?${queryString}` : ''
+    query ? `?${query}` : ''
   }`
 
   const response = await fetch(url)
@@ -24,11 +24,4 @@ export async function getReadings(options = {}) {
   }
 
   return response.json()
-}
-
-export async function getCollarHistory(collarId, limit = 10) {
-  return getReadings({
-    collarId,
-    limit,
-  })
 }

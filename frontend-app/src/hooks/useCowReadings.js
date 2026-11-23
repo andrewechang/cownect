@@ -1,35 +1,69 @@
 import { useEffect, useState } from 'react'
 import { getReadings } from '../services/api'
 
+const HISTORY_LIMIT = 1000
+
+function hasValidPosition(reading) {
+  return (
+    Number.isFinite(Number(reading.latitude)) &&
+    Number.isFinite(Number(reading.longitude)) &&
+    !(Number(reading.latitude) === 0 &&
+      Number(reading.longitude) === 0)
+  )
+}
+
 export function useCowReadings() {
   const [cows, setCows] = useState([])
+  const [histories, setHistories] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   async function loadReadings() {
     try {
-      const readings = await getReadings()
+      // Gets the readings used to construct the map history.
+      const readings = await getReadings({
+        limit: HISTORY_LIMIT,
+      })
 
-      const latestByCollar = new Map()
+      const readingsByCollar = new Map()
 
       for (const reading of readings) {
-        const existing = latestByCollar.get(reading.collar_id)
+        const collarId = String(reading.collar_id)
 
-        if (
-          !existing ||
-          new Date(reading.recorded_at) > new Date(existing.recorded_at)
-        ) {
-          latestByCollar.set(reading.collar_id, reading)
+        if (!readingsByCollar.has(collarId)) {
+          readingsByCollar.set(collarId, [])
+        }
+
+        if (hasValidPosition(reading)) {
+          readingsByCollar.get(collarId).push(reading)
         }
       }
 
-      const validCows = Array.from(latestByCollar.values()).filter(
-        (reading) =>
-          reading.latitude !== null &&
-          reading.longitude !== null
-      )
+      const latestCows = []
+      const historyByCollar = {}
 
-      setCows(validCows)
+      for (const [collarId, collarReadings] of readingsByCollar) {
+        const sortedReadings = collarReadings.sort(
+          (a, b) =>
+            new Date(a.recorded_at) -
+            new Date(b.recorded_at)
+        )
+
+        if (sortedReadings.length === 0) {
+          continue
+        }
+
+        // Ordered oldest to newest for drawing the trail.
+        historyByCollar[collarId] = sortedReadings
+
+        // The newest reading is the current position.
+        latestCows.push(
+          sortedReadings[sortedReadings.length - 1]
+        )
+      }
+
+      setCows(latestCows)
+      setHistories(historyByCollar)
       setError(null)
     } catch (err) {
       setError(err.message)
@@ -46,5 +80,11 @@ export function useCowReadings() {
     return () => clearInterval(interval)
   }, [])
 
-  return { cows, loading, error, reload: loadReadings }
+  return {
+    cows,
+    histories,
+    loading,
+    error,
+    reload: loadReadings,
+  }
 }

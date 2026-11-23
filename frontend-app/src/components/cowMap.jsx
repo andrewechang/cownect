@@ -1,20 +1,13 @@
 import {
+  CircleMarker,
   MapContainer,
-  TileLayer,
-  Marker,
+  Polyline,
   Popup,
+  TileLayer,
 } from 'react-leaflet'
-import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-const cowIcon = new L.Icon({
-  iconUrl: '/cow-marker.png',
-  iconSize: [40, 40],
-  iconAnchor: [20, 40],
-  popupAnchor: [0, -40],
-})
-
-function CowMap({ cows, onSelectCow }) {
+function CowMap({ cows, histories, onSelectCow }) {
   const defaultCenter = [33.7175, -117.8311]
 
   return (
@@ -28,24 +21,106 @@ function CowMap({ cows, onSelectCow }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {cows.map((cow) => (
-        <Marker
-          key={cow.collar_id}
-          position={[cow.latitude, cow.longitude]}
-          icon={cowIcon}
-          eventHandlers={{
-            click: () => onSelectCow(cow),
-          }}
-        >
-          <Popup>
-            <strong>{cow.collar_id}</strong>
-            <br />
-            Activity: {cow.activity ?? 'Unknown'}
-            <br />
-            Temperature: {cow.cow_temperature_c ?? 'N/A'} °C
-          </Popup>
-        </Marker>
-      ))}
+      {cows.map((cow) => {
+        const collarId = String(cow.collar_id)
+
+        const history = histories[collarId] ?? [cow]
+
+        const positions = history.map((reading) => [
+          Number(reading.latitude),
+          Number(reading.longitude),
+        ])
+
+        const currentPosition = positions[positions.length - 1]
+
+        return (
+          <div key={collarId}>
+            {/* Draw each trail segment with increasing opacity toward
+                the current position. */}
+            {positions.length > 1 &&
+              positions.slice(0, -1).map((position, index) => {
+                const nextPosition = positions[index + 1]
+
+                const opacity =
+                  0.15 +
+                  0.75 *
+                    ((index + 1) / (positions.length - 1))
+
+                return (
+                  <Polyline
+                    key={`${collarId}-line-${index}`}
+                    positions={[position, nextPosition]}
+                    pathOptions={{
+                      color: '#ef233c',
+                      weight: 4,
+                      opacity,
+                    }}
+                  />
+                )
+              })}
+
+            {/* Older saved positions. Older points are fainter. */}
+            {positions.slice(0, -1).map((position, index) => {
+              const opacity =
+                0.15 +
+                0.65 *
+                  ((index + 1) / Math.max(1, positions.length - 1))
+
+              return (
+                <CircleMarker
+                  key={`${collarId}-history-${index}`}
+                  center={position}
+                  radius={5}
+                  pathOptions={{
+                    color: '#ef233c',
+                    fillColor: '#ef233c',
+                    fillOpacity: opacity,
+                    opacity,
+                    weight: 1,
+                  }}
+                >
+                  <Popup>
+                    <strong>Collar {collarId}</strong>
+                    <br />
+                    Historical position
+                    <br />
+                    {new Date(
+                      history[index].recorded_at
+                    ).toLocaleString()}
+                  </Popup>
+                </CircleMarker>
+              )
+            })}
+
+            {/* Bright red current position. */}
+            <CircleMarker
+              center={currentPosition}
+              radius={9}
+              pathOptions={{
+                color: '#9b1023',
+                fillColor: '#ff1e3c',
+                fillOpacity: 1,
+                opacity: 1,
+                weight: 3,
+              }}
+              eventHandlers={{
+                click: () => onSelectCow(cow),
+              }}
+            >
+              <Popup>
+                <strong>Collar {collarId}</strong>
+                <br />
+                Current position
+                <br />
+                Activity: {cow.activity ?? 'Unknown'}
+                <br />
+                Temperature:{' '}
+                {cow.cow_temperature_c ?? 'N/A'} °C
+              </Popup>
+            </CircleMarker>
+          </div>
+        )
+      })}
     </MapContainer>
   )
 }
