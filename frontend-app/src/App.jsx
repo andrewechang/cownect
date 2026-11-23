@@ -94,6 +94,7 @@ function App() {
           <CowMap
             cows={cows}
             histories={histories}
+            selectedCow={selectedCow}
             onSelectCow={setSelectedCow}
           />
 

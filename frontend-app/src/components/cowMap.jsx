@@ -1,13 +1,50 @@
+import { useEffect } from 'react'
+
 import {
   CircleMarker,
   MapContainer,
   Polyline,
   Popup,
   TileLayer,
+  useMap,
 } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
-function CowMap({ cows, histories, onSelectCow }) {
+function FocusOnCow({ selectedCow }) {
+  const map = useMap()
+
+  useEffect(() => {
+    if (!selectedCow) {
+      return
+    }
+
+    const latitude = Number(selectedCow.latitude)
+    const longitude = Number(selectedCow.longitude)
+
+    if (!Number.isFinite(latitude) ||
+        !Number.isFinite(longitude)) {
+      return
+    }
+
+    map.flyTo(
+      [latitude, longitude],
+      17,
+      {
+        animate: true,
+        duration: 1.25,
+      }
+    )
+  }, [map, selectedCow])
+
+  return null
+}
+
+function CowMap({
+  cows,
+  histories,
+  selectedCow,
+  onSelectCow,
+}) {
   const defaultCenter = [33.7175, -117.8311]
 
   return (
@@ -16,6 +53,8 @@ function CowMap({ cows, histories, onSelectCow }) {
       zoom={15}
       className="cow-map"
     >
+
+      <FocusOnCow selectedCow={selectedCow} />
       <TileLayer
         attribution="&copy; OpenStreetMap contributors"
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
