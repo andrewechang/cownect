@@ -23,11 +23,11 @@
 // ================================================================ SETTINGS
 #define TEST_ALL               99      // special value: run tests 1..9 once each, then a PASS/FAIL list
 
-#define TEST_NUMBER            TEST_ALL       // 0 = normal firmware (no tests)
+#define TEST_NUMBER            0              // 0 = normal firmware (no tests)
                                        // 1..9 = repeat that one test forever
                                        // TEST_ALL = run every test once, in order
 
-#define TEST_REPEAT_MS         2000    // pause between two runs of the same test
+#define TEST_REPEAT_MS         0    // pause between two runs of the same test
 #define TEST_LORA_TX_EVERY_MS  60000   // TEST 8 only: pause between packets. Keep it long so the
                                        // radio stays within your region's duty-cycle limit.
 // ================================================================

@@ -3,7 +3,9 @@
 //
 // Both targets get exactly the same bytes: a 21-byte upload header + the capture
 // stream (docs/protocols.md). Only the transport is different:
-//   UPLOAD_TO_JETSON : plain TCP (not HTTP) to JETSON_IP:JETSON_RAW_PORT, then close
+//   UPLOAD_TO_JETSON : plain TCP (not HTTP) to JETSON_IP:JETSON_RAW_PORT, then close.
+//                      The receiver must read until the collar closes, then close too:
+//                      the collar waits for that before switching Wi-Fi off.
 //   UPLOAD_TO_WEB    : one HTTPS POST to WEB_UPLOAD_URL, body = those bytes
 //                      (Content-Type application/octet-stream), API key in a header.
 //                      2xx reply = success. The server certificate is checked
@@ -15,18 +17,19 @@
 #include "capture.h"
 
 // ================================================================ SETTINGS
+
 #define UPLOAD_TO_JETSON       1
 #define UPLOAD_TO_WEB          2
 #define UPLOAD_TARGET          UPLOAD_TO_JETSON
 
-#define WIFI_SSID              ""      // TODO network name
-#define WIFI_PASSWORD          ""      // TODO network password
+#define WIFI_SSID              ""      // TODO network name (2.4 GHz)
+#define WIFI_PASSWORD          ""      // TODO network password - do NOT push the real password to GitHub
 #define WIFI_CONNECT_TIMEOUT_MS 10000  // wait this long for an IP address from the router
 #define TCP_SEND_TIMEOUT_MS    10000   // a send (Jetson) or HTTPS read/write (website) may stall this long
 
 // --- UPLOAD_TO_JETSON ---
 #define JETSON_IP              ""      // TODO e.g. "192.168.1.50" (numbers only, no names)
-#define JETSON_RAW_PORT        0       // TODO TCP port the Jetson receiver listens on
+#define JETSON_RAW_PORT        0       // TODO TCP port the Jetson receiver listens on (receiver.py default: 5000)
 
 // --- UPLOAD_TO_WEB ---
 // Full address, must start with "https://". The port goes in the URL only if it is

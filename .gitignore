@@ -8,6 +8,8 @@
 *.sqlite3
 *.db
 .env
+#bridge feature logs (software-jetson)
+*.jsonl
 .venv/
 venv/
 ENV/

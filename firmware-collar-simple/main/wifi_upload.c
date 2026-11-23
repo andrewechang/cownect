@@ -145,16 +145,35 @@ static int open_jetson_socket(void)
     return sock;
 }
 
-// Opens a TCP connection to the Jetson, sends the upload and closes the connection.
+// send() only hands the bytes to the TCP stack; switching Wi-Fi off right after it
+// drops whatever is still in flight (the end of the upload). So: half-close (FIN after
+// the last byte), then wait until the Jetson closes its side, which it does only after
+// reading everything. True = delivered; false = timeout or error.
+static bool wait_until_delivered(int sock)
+{
+    shutdown(sock, SHUT_WR);
+    struct timeval tv = { .tv_sec = TCP_SEND_TIMEOUT_MS / 1000, .tv_usec = (TCP_SEND_TIMEOUT_MS % 1000) * 1000 };
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    char buf[16];
+    int n;
+    while ((n = recv(sock, buf, sizeof(buf), 0)) > 0) {}   // the Jetson sends nothing; just wait
+    return n == 0;
+}
+
+// Opens a TCP connection to the Jetson, sends the upload, waits until it has all
+// arrived and closes the connection.
 static bool send_to_jetson(const capture_t *c)
 {
     int sock = open_jetson_socket();
     if (sock < 0) return false;
     bool ok = write_capture(c, tcp_write, &sock);
+    if (ok && !wait_until_delivered(sock)) {
+        ESP_LOGE(TAG, "the Jetson did not confirm the end of the upload (connection lost?)");
+        ok = false;
+    }
     if (ok) ESP_LOGI(TAG, "uploaded capture %u to the Jetson: %u bytes", (unsigned)c->capture_id,
                      (unsigned)upload_size(c));
     else ESP_LOGE(TAG, "upload interrupted");
-    shutdown(sock, SHUT_RDWR);
     close(sock);
     return ok;
 }

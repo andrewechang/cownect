@@ -116,7 +116,8 @@ bool analog_start(analog_data_t *d)
 
 // Turns one averaging period into a temperature value and adds it to the list.
 //   board (MCP9700): T = (mV - 500) / 10, valid for 100..1750 mV (-40..125 C)
-//   cow (thermistor divider): R = R_fixed * V / (Vsupply - V), then the Beta formula
+//   cow (thermistor divider): R = R_fixed * V / (Vsupply - V), then the Beta formula;
+//        a raw code at the ADC rails is an open or shorted probe (COW_ADC_OPEN/SHORT_RAW)
 static void add_temperature(temp_sample_t *list, uint32_t *count, bool is_cow,
                             adc_cali_handle_t cal, uint32_t sum, uint32_t n)
 {
@@ -131,16 +132,21 @@ static void add_temperature(temp_sample_t *list, uint32_t *count, bool is_cow,
     t->temp_c = NAN;
 
     if (!is_cow) {
-        t->valid = mv >= 100 && mv <= 1750;
-        if (t->valid) t->temp_c = (mv - MCP9700_MV_AT_0C) / MCP9700_MV_PER_C;
+        if (mv < 0) t->status = TEMP_CAL_UNAVAILABLE;
+        else t->status = (mv >= 100 && mv <= 1750) ? TEMP_OK : TEMP_INVALID_VOLTAGE;
+        if (t->status == TEMP_OK) t->temp_c = (mv - MCP9700_MV_AT_0C) / MCP9700_MV_PER_C;
     } else {
-        t->valid = mv > 0 && mv < NTC_SUPPLY_MV;
-        if (t->valid) {
+        if (t->adc_raw >= COW_ADC_OPEN_RAW) t->status = TEMP_OPEN;
+        else if (t->adc_raw <= COW_ADC_SHORT_RAW) t->status = TEMP_SHORT;
+        else if (mv < 0) t->status = TEMP_CAL_UNAVAILABLE;
+        else t->status = (mv > 0 && mv < NTC_SUPPLY_MV) ? TEMP_OK : TEMP_INVALID_VOLTAGE;
+        if (t->status == TEMP_OK) {
             t->resistance_ohm = NTC_FIXED_R_OHM * mv / (NTC_SUPPLY_MV - mv);
             float inv_t = 1.0f / 298.15f + logf(t->resistance_ohm / NTC_R25_OHM) / NTC_BETA;
             t->temp_c = 1.0f / inv_t - 273.15f;
         }
     }
+    t->valid = t->status == TEMP_OK;
     (*count)++;
 }
 

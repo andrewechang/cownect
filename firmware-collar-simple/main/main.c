@@ -1,20 +1,20 @@
 // main.c - CowNect collar, simple firmware version 2.
 //
-// Every CYCLE_MS (120 s):
+// Every CYCLE_MS (60 s):
 //   1. sensor power on
-//   2. record all sensors for CAPTURE_MS (30 s)          capture.c
+//   2. record all sensors for CAPTURE_MS (15 s)          capture.c
 //   3. check the data and make a summary                 capture.c
-//   4. send:  COMM_HYBRID    -> summary over LoRa        lora.c
-//                               + recording over Wi-Fi   wifi_upload.c
-//             COMM_LORA_FULL -> recording over LoRa      lora_full.c
+//   4. send:  COMM_LORA_FULL -> one packet of values over LoRa   features.c + lora.c
+//             COMM_HYBRID    -> summary over LoRa                lora.c
+//                               + raw recording over Wi-Fi       wifi_upload.c
 //   5. sensor power off, deep sleep until the next cycle
 // After deep sleep the chip starts again at app_main().
 #include <stdbool.h>
 #include "config.h"
 #include "capture.h"
 #include "data_format.h"
+#include "features.h"
 #include "lora.h"
-#include "lora_full.h"
 #include "wifi_upload.h"
 #include "test_mode.h"
 #include "driver/gpio.h"
@@ -71,14 +71,27 @@ static void run_cycle(int64_t cycle_start)
     summary_t summary;
     capture_summary(&capture, last_cycle_overrun, &summary);
 
+    int64_t t_send = esp_timer_get_time();
+    ESP_LOGI(TAG, "[TIME] record %lld ms", (t_send - cycle_start) / 1000);
 #if COMM_MODE == COMM_LORA_FULL
-    lora_full_send(&capture);                 // the radio needs the sensor power, so send first
+    static features_t features;
+    features_compute(&capture, &features);
+    uint8_t packet[FEATURES_MAX_BYTES];
+    size_t len = build_features(&capture, &summary, &features, packet);
+    int64_t t_tx = esp_timer_get_time();
+    bool lora_ok = lora_send(packet, len);    // one packet, no ACK: a lost packet costs one cycle
     sensor_power(false);
+    ESP_LOGI(TAG, "[TIME] features %lld ms | LoRa %u bytes %s: %lld ms", (t_tx - t_send) / 1000,
+             (unsigned)len, lora_ok ? "OK" : "FAILED", (esp_timer_get_time() - t_tx) / 1000);
 #else
     uint8_t packet[TELEMETRY_BYTES];
-    lora_send(packet, build_telemetry(&capture, &summary, packet));
+    bool lora_ok = lora_send(packet, build_telemetry(&capture, &summary, packet));
+    int64_t t_wifi = esp_timer_get_time();
     sensor_power(false);                      // Wi-Fi is inside the ESP32, no sensor power needed
-    wifi_upload_capture(&capture);
+    bool wifi_ok = wifi_upload_capture(&capture);
+    ESP_LOGI(TAG, "[TIME] LoRa summary %s: %lld ms | Wi-Fi upload %s: %lld ms",
+             lora_ok ? "OK" : "FAILED", (t_wifi - t_send) / 1000,
+             wifi_ok ? "OK" : "FAILED", (esp_timer_get_time() - t_wifi) / 1000);
 #endif
 
     int64_t awake_ms = (esp_timer_get_time() - cycle_start) / 1000;
