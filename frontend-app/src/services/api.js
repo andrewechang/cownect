@@ -13,6 +13,7 @@ export async function getReadings(options = {}) {
   }
 
   const query = params.toString()
+
   const url = `${API_BASE_URL}/api/v1/readings${
     query ? `?${query}` : ''
   }`
@@ -24,4 +25,14 @@ export async function getReadings(options = {}) {
   }
 
   return response.json()
+}
+
+export async function getCollarHistory(
+  collarId,
+  limit = 10
+) {
+  return getReadings({
+    collarId,
+    limit,
+  })
 }
