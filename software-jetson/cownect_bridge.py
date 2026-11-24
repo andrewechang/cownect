@@ -2,21 +2,19 @@ import json
 import os
 import time
 from datetime import datetime, timezone
-from dotenv import load_dotenv
-load_dotenv()
 
 import requests
 import serial
 
 
 # Change this if the Heltec appears under a different device name.
-SERIAL_PORT = os.getenv("COWNect_SERIAL_PORT")
+SERIAL_PORT = "/dev/ttyUSB0"
 
 # This must match the baud rate used by the Heltec receiver.
 BAUD_RATE = 115200
 
 # Replace this with your actual Render backend URL.
-API_URL = os.getenv("COWNect_API_URL")
+API_URL = "https://cownect-api.onrender.com/api/v1/readings"
 
 def create_database_reading(telemetry):
     """
