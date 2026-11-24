@@ -9,7 +9,12 @@
 //                               + raw recording over Wi-Fi       wifi_upload.c
 //   5. sensor power off, deep sleep until the next cycle
 // After deep sleep the chip starts again at app_main().
+// Before the first cycle (power-up / reset) the GPS stays on until its first fix; see config.h
+// "GPS first fix". The same wait runs again after GPS_RECOVER_AFTER_CYCLES cycles without a fix.
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 #include "config.h"
 #include "capture.h"
 #include "data_format.h"
@@ -39,6 +44,8 @@ static const char *TAG = "main";
 RTC_DATA_ATTR static uint32_t rtc_magic;
 RTC_DATA_ATTR static uint32_t next_capture_id;
 RTC_DATA_ATTR static bool last_cycle_overrun;
+RTC_DATA_ATTR static uint32_t gps_wait_max_ms;           // > 0: wait for a GPS fix before the next cycle
+RTC_DATA_ATTR static uint32_t cycles_without_fix;        // cycles in a row with no GPS fix
 
 static capture_t capture;
 
@@ -59,6 +66,74 @@ static bool normal_mode(void)
     return true;
 }
 
+// Sends one status text by LoRa: "CM", version 1, type 0x12, then the text (no '\0').
+// The receiver prints it as {"type":"collar_status","text":"..."}.
+static void lora_status(const char *fmt, ...)
+{
+    uint8_t pkt[4 + 100] = {0x43, 0x4D, 1, 0x12};
+    int n = snprintf((char *)&pkt[4], sizeof(pkt) - 4, "collar %u: ", (unsigned)DEVICE_ID);
+    va_list ap;
+    va_start(ap, fmt);
+    n += vsnprintf((char *)&pkt[4 + n], sizeof(pkt) - 4 - n, fmt, ap);
+    va_end(ap);
+    if (n > (int)sizeof(pkt) - 5) n = sizeof(pkt) - 5;
+    lora_send(pkt, 4 + n);
+}
+
+// Keeps the GPS powered and reading until it has a fix (+ GPS_EXTRA_ON_MS so it stores all
+// satellites), or `max_ms` without one. Sends "GPS waiting, not fix yet" every GPS_WAIT_STATUS_MS.
+// Returns true if it got a fix.
+static bool gps_wait_for_fix(uint32_t max_ms)
+{
+    ESP_LOGI(TAG, "GPS: waiting for a fix before the normal cycle (max %u s)", (unsigned)(max_ms / 1000));
+    sensor_power(true);
+    if (!gps_start()) {
+        ESP_LOGE(TAG, "GPS: UART could not be started");
+        sensor_power(false);
+        return false;
+    }
+    gps_data_t *g = &capture.gps;                    // the capture buffer is free until the cycle
+    memset(g, 0, sizeof(*g));
+    int64_t start = esp_timer_get_time();
+    uint32_t fix_ms = UINT32_MAX, next_status_ms = 0;
+    uint8_t sats = 0;
+    while (true) {
+        uint32_t t = (uint32_t)((esp_timer_get_time() - start) / 1000);
+        gps_read(g, t);
+        for (uint32_t i = 0; i < g->count; i++) {
+            sats = g->fixes[i].satellites;
+            if (g->fixes[i].valid && fix_ms == UINT32_MAX) {
+                fix_ms = t;
+                ESP_LOGI(TAG, "GPS: FIX after %u s, %u satellites (%.6f, %.6f) - staying on %u s",
+                         (unsigned)(t / 1000), (unsigned)sats, g->fixes[i].lat_e7 / 1e7,
+                         g->fixes[i].lon_e7 / 1e7, (unsigned)(GPS_EXTRA_ON_MS / 1000));
+                lora_status("GPS fix after %u s, sats %u, staying on %u s", (unsigned)(t / 1000),
+                            (unsigned)sats, (unsigned)(GPS_EXTRA_ON_MS / 1000));
+            }
+        }
+        g->count = 0;                                // only the newest messages matter here
+        if (fix_ms != UINT32_MAX) {
+            if (t >= fix_ms + GPS_EXTRA_ON_MS) break;
+        } else if (t >= max_ms) {
+            ESP_LOGW(TAG, "GPS: no fix after %u s - starting the normal cycle anyway", (unsigned)(t / 1000));
+            lora_status("GPS no fix after %u s, starting normal cycle", (unsigned)(t / 1000));
+            break;
+        } else if (t >= 10000 && !g->uart_ok) {
+            ESP_LOGE(TAG, "GPS: no NMEA from the module (RX GPIO%d) - not waiting", PIN_GPS_RX);
+            lora_status("GPS not answering, starting normal cycle");
+            break;
+        } else if (t >= next_status_ms) {
+            ESP_LOGI(TAG, "GPS: waiting, not fix yet | %u s | sats %u", (unsigned)(t / 1000), (unsigned)sats);
+            lora_status("GPS waiting, not fix yet | %u s | sats %u", (unsigned)(t / 1000), (unsigned)sats);
+            next_status_ms += GPS_WAIT_STATUS_MS;
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    gps_stop();
+    sensor_power(false);
+    return fix_ms != UINT32_MAX;
+}
+
 // One cycle: power on -> record -> summary -> send -> power off.
 static void run_cycle(int64_t cycle_start)
 {
@@ -70,6 +145,17 @@ static void run_cycle(int64_t cycle_start)
 
     summary_t summary;
     capture_summary(&capture, last_cycle_overrun, &summary);
+
+    // Too many cycles without a fix (saved satellite data too old, or the collar was under a
+    // roof): wait for a fix again before the next cycle.
+    if (summary.gps_valid) {
+        cycles_without_fix = 0;
+    } else if (++cycles_without_fix >= GPS_RECOVER_AFTER_CYCLES) {
+        ESP_LOGW(TAG, "GPS: %u cycles without a fix - longer GPS wait before the next cycle",
+                 (unsigned)cycles_without_fix);
+        gps_wait_max_ms = GPS_RECOVER_MAX_MS;
+        cycles_without_fix = 0;
+    }
 
     int64_t t_send = esp_timer_get_time();
     ESP_LOGI(TAG, "[TIME] record %lld ms", (t_send - cycle_start) / 1000);
@@ -101,7 +187,8 @@ static void run_cycle(int64_t cycle_start)
 }
 
 // Start-up (also after every deep sleep):
-//   first power-up only -> reset the counters, check the LoRa wiring
+//   first power-up only -> reset the counters, check the LoRa wiring, then wait for the first
+//                          GPS fix before the first cycle (GPS_FIRST_FIX_MAX_MS, config.h)
 //   PROG switch LOW     -> stay idle so the board can be flashed
 //   otherwise           -> run a cycle, then deep sleep (or wait, in bench mode)
 void app_main(void)
@@ -131,6 +218,8 @@ void app_main(void)
         sensor_power(true);
         lora_spi_check();                           // wiring check only, no transmission
         sensor_power(false);
+        gps_wait_max_ms = GPS_FIRST_FIX_MAX_MS;     // the GPS may have no saved data: first fix first
+        cycles_without_fix = 0;
     }
 
     while (!normal_mode()) {
@@ -147,6 +236,12 @@ void app_main(void)
     }
 
     while (true) {
+        if (gps_wait_max_ms > 0) {                  // power-up, or too many cycles without a fix
+            gps_wait_for_fix(gps_wait_max_ms);
+            gps_wait_max_ms = 0;
+            cycles_without_fix = 0;
+            cycle_start = esp_timer_get_time();     // the cycle timing starts after the wait
+        }
         run_cycle(cycle_start);
         int64_t left_us = (int64_t)CYCLE_MS * 1000 - (esp_timer_get_time() - cycle_start);
         if (left_us < 0) left_us = 0;               // overrun: start the next cycle at once

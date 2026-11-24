@@ -19,6 +19,7 @@ static const char *TAG = "receiver";
 #define TELEMETRY_MAGIC    0x4D43
 #define TELEMETRY_VERSION  1
 #define TELEMETRY_TYPE     0x10
+#define STATUS_TYPE        0x12    // collar status text line
 
 // LORA_FULL mode: feature packet (simple_version2 data_format.c build_features)
 //    0 "CM" | 2 version 2 | 3 type 0x11 | 4 device u64 | 12 capture u32
@@ -357,6 +358,21 @@ void app_main(void)
                                   1000);
 
         if (length <= 0) {
+            continue;
+        }
+
+        // Collar status text (e.g. "GPS waiting, not fix yet"): "CM", version 1, type 0x12, then the text
+        if (length > 4 && read_u16(&packet[0]) == TELEMETRY_MAGIC &&
+            packet[2] == 1 && packet[3] == STATUS_TYPE) {
+            printf("{\"type\":\"collar_status\",\"text\":\"");
+            for (int i = 4; i < length; i++) {
+                char ch = (char)packet[i];
+                if (ch == '"' || ch == '\\') putchar('\\');
+                putchar(ch >= 0x20 && ch < 0x7F ? ch : '?');
+            }
+            printf("\",\"rssi\":%.0f,\"snr\":%.1f}\n",
+                   (double)lora_last_packet_rssi(), (double)lora_last_packet_snr());
+            fflush(stdout);
             continue;
         }
 
