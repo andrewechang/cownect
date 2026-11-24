@@ -6,14 +6,6 @@ ESP32-S3, ESP-IDF v5.5.5, plain C.
 Every 60 s: sensor power on → record all sensors for 15 s → check the data and make a
 summary → send → sensor power off → deep sleep.
 
-**GPS first fix:** at power-up / reset the collar first keeps the GPS on until its first fix
-(+3 min so it stores all satellites, max 15 min), then starts the cycle. A GPS with no saved
-data cannot get a fix in the ~18 s it is on per cycle (tested: 1.8 min with the GPS on all the
-time, no fix after 20 cycles). After the fix, VBAT (ALWAYS_ON_3V3) keeps the data through deep
-sleep. While waiting it sends `collar N: GPS waiting, not fix yet | t s | sats n` by LoRa every
-60 s (status packet type 0x12; the receiver prints it as `"type":"collar_status"`). After 10
-cycles in a row without a fix it waits again (max 5 min). Settings: "GPS first fix" in `config.h`.
-
 - `COMM_LORA_FULL` (default): LoRa only. The collar works out values from the recording
   (`features.c`: per 3 s block tilt, movement (ODBA), biggest jolt, movement bursts, jerk X/Y/Z
   and sound in 3 bands; loudness per second, loud sound events, GPS, temperatures) and sends them
@@ -36,10 +28,10 @@ monitor connected. PROG switch LOW = idle (safe to flash), HIGH = run.
 | File | What it does | Settings at the top |
 |---|---|---|
 | `config.h` | Board-wide settings and pins | device ID, cycle/capture time, bench mode, send mode |
-| `main.c` | The 60 s cycle, PROG switch, deep sleep, GPS first-fix wait + LoRa status | |
+| `main.c` | The 60 s cycle, PROG switch, deep sleep | |
 | `capture.c/.h` | Records all sensors together; problem flags; summary | |
 | `accel.c/.h` | LIS2DW12 accelerometer, keeps its data in `accel_data_t` | rate, range, read interval |
-| `gps.c/.h` | ATGM336H GPS (RMC + GGA), keeps its data in `gps_data_t`. Pins: RX = GPIO39, TX = GPIO40 (`config.h`) since 2026-11-23: replacement GPS module, same power wiring as the old onboard one (which was on RX 18 / TX 17 and received no satellites) | UART port, baud |
+| `gps.c/.h` | ATGM336H GPS (RMC + GGA), keeps its data in `gps_data_t`. Pins: RX = GPIO39, TX = GPIO40 (`config.h`) | UART port, baud |
 | `analog.c/.h` | Microphone + both temperatures on the ADC, data in `analog_data_t` | mic rate, temp interval, clip limits, sensor constants |
 | `data_format.c/.h` | Telemetry packet, feature packet, raw data stream, upload header | |
 | `features.c/.h` | Values for the COMM_LORA_FULL packet | block length, sound bands, movement / sound-event thresholds |

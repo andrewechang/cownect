@@ -16,10 +16,8 @@
 #define RAIL_STABILIZE_MS      3000    // wait after switching the sensor power on: the mic amplifier bias needs ~3 s to settle
 
 // ---------------------------------------------------------------- GPS first fix
-// A GPS with no saved satellite data (first power-up, battery out, or data older than a few
-// hours) needs minutes of CONTINUOUS power for its first fix: the ~18 s per cycle never gets
-// there (tested 2026-11-23: 1.8 min continuous vs. no fix after 15+ min of cycles). After a fix,
-// VBAT (ALWAYS_ON_3V3) keeps the data through deep sleep, so the short cycles then fix quickly.
+// A GPS with no saved satellite data needs minutes of continuous power for its first fix; the
+// ~18 s per cycle is not enough. VBAT keeps the data through deep sleep afterwards.
 // So the GPS stays on until its first fix before the normal cycle starts:
 #define GPS_FIRST_FIX_MAX_MS     (15 * 60 * 1000)  // at power-up / reset: wait at most this long
 #define GPS_EXTRA_ON_MS          (3 * 60 * 1000)   // after the fix: stay on so it stores all satellites
@@ -53,9 +51,6 @@
 #define PIN_LORA_RST           13
 #define PIN_LORA_DIO1          14
 #define PIN_MODE_SW            15      // PROG switch: LOW = programming (idle), HIGH = normal
-// GPS: since 2026-11-23 the replacement GPS module, UART on GPIO39/40 (same power wiring as the
-// old onboard ATGM336H: VCC = SWITCHED_3V3, VBAT = ALWAYS_ON_3V3). The old onboard module was
-// RX 18 / TX 17 (PCB has its TXD/RXD crossed) and received no satellites.
 #define PIN_GPS_RX             39      // ESP32 RX <- GPS TXD
 #define PIN_GPS_TX             40      // ESP32 TX -> GPS RXD
 #define PIN_LORA_BUSY          21
