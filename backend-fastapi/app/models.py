@@ -2,7 +2,10 @@ from datetime import datetime
 #allows for the current date and time to be recorded in the database
 
 #sqlalchemy is used to interact with database without SQL queries
-from sqlalchemy import DateTime, Float, Integer, String, func
+from sqlalchemy import (
+    DateTime, Float, Integer, String, func, JSON
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 #contains Python classes that represent database tables
@@ -88,6 +91,37 @@ class SensorReading(Base):
     # Confidence of the ML prediction, such as 0.93.
     confidence: Mapped[float | None] = mapped_column(
         Float,
+        nullable=True,
+    )
+
+    # Original complete JSON decoded by the Heltec.
+    # Includes GPS satellites, per-block IMU values,
+    # sound measurements, capture metadata, etc.
+    telemetry: Mapped[dict | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
+    # Packet format: "telemetry" or "features".
+    packet_type: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    # ID of the original capture on the collar.
+    capture_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    # GPS satellite count (available in features packets).
+    gps_satellites: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    gps_fix_quality: Mapped[int | None] = mapped_column(
+        Integer,
         nullable=True,
     )
 

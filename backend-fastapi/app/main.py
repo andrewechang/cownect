@@ -77,9 +77,12 @@ def get_readings(
         query = query.where(SensorReading.collar_id == collar_id)
 
     query = (
-        query
-        .order_by(SensorReading.recorded_at.desc())
-        .limit(limit)
+    query
+    .order_by(
+        SensorReading.created_at.desc(),
+        SensorReading.id.desc(),
+    )
+    .limit(limit)
     )
 
     return db.scalars(query).all()

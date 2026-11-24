@@ -16,38 +16,72 @@ BAUD_RATE = 115200
 # Replace this with your actual Render backend URL.
 API_URL = "https://cownect-api.onrender.com/api/v1/readings"
 
+
 def create_database_reading(telemetry):
     """
-    Converts the JSON format printed by the Heltec into the
-    JSON format expected by the FastAPI backend.
+    Convert the Heltec's decoded JSON into a database reading.
+
+    The original complete packet is retained in the
+    telemetry JSONB column, including the blocks array.
     """
 
+    received_at = datetime.now(timezone.utc).isoformat()
+
     return {
-        # The backend expects collar_id to be a string.
         "collar_id": str(telemetry["device_id"]),
 
-        # The Heltec packet does not currently include a timestamp,
-        # so the Jetson records the time when it received the packet.
-        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        # The current LoRa packet does not contain a
+        # wall-clock timestamp.
+        "recorded_at": received_at,
+
+        "packet_type": telemetry.get("type"),
+        "capture_id": telemetry.get("capture_id"),
 
         "latitude": telemetry.get("latitude"),
         "longitude": telemetry.get("longitude"),
 
-        "board_temperature_c": telemetry.get("board_temperature_c"),
-        "cow_temperature_c": telemetry.get("cow_temperature_c"),
+        "gps_satellites": telemetry.get(
+            "gps_satellites"
+        ),
+        "gps_fix_quality": telemetry.get(
+            "gps_fix_quality"
+        ),
 
-        # The current receiver packet provides microphone RMS.
-        "microphone_level_derivative": telemetry.get("mic_rms"),
+        "board_temperature_c": telemetry.get(
+            "board_temperature_c"
+        ),
+        "cow_temperature_c": telemetry.get(
+            "cow_temperature_c"
+        ),
 
-        # Sent in "features" packets only (average |da/dt|, g/s);
-        # telemetry packets don't have them, so they stay empty.
-        "accel_x_derivative": telemetry.get("accel_x_derivative"),
-        "accel_y_derivative": telemetry.get("accel_y_derivative"),
-        "accel_z_derivative": telemetry.get("accel_z_derivative"),
+        "accel_x_derivative": telemetry.get(
+            "accel_x_derivative"
+        ),
+        "accel_y_derivative": telemetry.get(
+            "accel_y_derivative"
+        ),
+        "accel_z_derivative": telemetry.get(
+            "accel_z_derivative"
+        ),
+
+        "microphone_level_derivative": telemetry.get(
+            "mic_rms"
+        ),
+
+        # No battery reading is currently forwarded.
         "battery_voltage": None,
+
+        # The Jetson ML classifier can populate these
+        # fields once its output is integrated.
         "activity": None,
         "confidence": None,
+
+        # Store every field printed by the Heltec,
+        # including blocks, tilt, movement, jerk,
+        # loudness, flags, and capture metadata.
+        "telemetry": telemetry,
     }
+
 
 
 print(f"Opening Heltec serial port: {SERIAL_PORT}")

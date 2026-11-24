@@ -1,67 +1,192 @@
+
 .app-shell {
   min-height: 100vh;
   background: #f4f6f1;
   color: #253126;
 }
 
-
 .app-header {
-  height: 72px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 28px;
-  background: #ffffff;
+  padding: 12px 28px;
+  background: white;
   border-bottom: 1px solid #dfe5dc;
 }
 
 .app-header h1 {
   margin: 0;
+  font-size: 26px;
 }
 
 .app-header p {
   margin: 4px 0 0;
   color: #718071;
+  font-size: 13px;
+}
+
+button {
+  font-family: inherit;
+}
+
+.refresh-button,
+.sidebar-toggle,
+.telemetry-button {
+  padding: 9px 14px;
+  border: 1px solid #d5dfd2;
+  border-radius: 8px;
+  background: white;
+  color: #253126;
+  cursor: pointer;
+}
+
+.refresh-button:hover,
+.sidebar-toggle:hover,
+.telemetry-button:hover {
+  background: #edf4e9;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px 24px;
+}
+
+.summary-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 14px;
+  background: white;
+  border: 1px solid #dfe5dc;
+  border-radius: 12px;
+}
+
+.summary-card span {
+  color: #607060;
+  font-size: 13px;
+}
+
+.summary-card strong {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.summary-card small {
+  color: #718071;
+  font-size: 11px;
+  text-align: center;
 }
 
 .dashboard {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  height: calc(100vh - 72px);
+  display: flex;
+  height: calc(100vh - 206px);
+  min-height: 500px;
 }
 
 .sidebar {
-  padding: 24px;
+  width: 285px;
+  flex-shrink: 0;
+  padding: 18px;
   overflow-y: auto;
-  background: #ffffff;
+  background: white;
   border-right: 1px solid #dfe5dc;
+}
+
+.sidebar-heading,
+.details-heading,
+.cow-list-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-heading h2,
+.details-heading h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.sidebar-heading small {
+  color: #718071;
+}
+
+.close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #536253;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.close-button:hover {
+  background: #edf1eb;
 }
 
 .cow-list-item {
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: stretch;
+  gap: 10px;
   margin-top: 12px;
-  padding: 14px;
+  padding: 13px;
   border: 1px solid #dfe5dc;
   border-radius: 10px;
   background: white;
+  color: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
 .cow-list-item:hover {
-  background: #eef5e9;
+  background: #f2f7ee;
 }
 
-.cow-list-item small {
-  color: #718071;
+.cow-list-item.selected {
+  background: #edf5e9;
+  border-color: #86a881;
+}
+
+.cow-list-data {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #596959;
+  font-size: 12px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot.online {
+  background: #35a853;
+}
+
+.status-dot.offline {
+  background: #a3aaa3;
 }
 
 .map-section {
   position: relative;
+  flex: 1;
   min-width: 0;
+  min-height: 0;
 }
 
 .cow-map {
@@ -69,12 +194,55 @@
   height: 100%;
 }
 
+.sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  left: 55px;
+  z-index: 900;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 12%);
+}
+
+/* Map marker with collar ID below the dot. */
+.collar-marker {
+  background: transparent;
+  border: none;
+}
+
+.collar-marker-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100px;
+}
+
+.collar-marker-dot {
+  display: block;
+  width: 17px;
+  height: 17px;
+  border: 3px solid white;
+  border-radius: 50%;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
+}
+
+.collar-marker-label {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: rgb(255 255 255 / 94%);
+  color: #253126;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 15%);
+}
+
+/* Selected collar information card. */
 .details-card {
   position: absolute;
-  right: 24px;
-  top: 24px;
-  bottom: 24px;
-  width: min(720px, calc(100% - 48px));
+  top: 65px;
+  right: 18px;
+  bottom: 18px;
+  width: min(560px, calc(100% - 36px));
   padding: 20px;
   border-radius: 14px;
   background: white;
@@ -83,26 +251,23 @@
   overflow-y: auto;
 }
 
-.error {
-  color: #b3261e;
-}
-
-.current-reading {
-  padding-bottom: 12px;
-  border-bottom: 1px solid #dfe5dc;
-}
-
 .details-card h3 {
-  margin: 16px 0 10px;
+  margin: 18px 0 10px;
   font-size: 15px;
 }
 
 .details-card p {
-  margin: 7px 0;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.current-reading {
+  padding-bottom: 14px;
+  border-bottom: 1px solid #dfe5dc;
 }
 
 .history-section {
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .history-table-wrapper {
@@ -110,26 +275,125 @@
   overflow-x: auto;
 }
 
-.history-table {
+.history-table,
+.telemetry-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
-  white-space: nowrap;
+  font-size: 12px;
 }
 
 .history-table th,
-.history-table td {
-  padding: 7px 6px;
-  text-align: left;
+.history-table td,
+.telemetry-table th,
+.telemetry-table td {
+  padding: 9px 7px;
   border-bottom: 1px solid #e5e9e2;
+  text-align: left;
 }
 
-.history-table th {
+.history-table th,
+.telemetry-table th {
   color: #536253;
   background: #f4f6f1;
   font-weight: 600;
 }
 
-.history-table tr:hover {
-  background: #f7faf5;
+.telemetry-button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* Full telemetry detail screen. */
+.telemetry-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 45%);
+  z-index: 3000;
+}
+
+.telemetry-dialog {
+  width: min(850px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  background: white;
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+
+.telemetry-dialog h3 {
+  margin-top: 24px;
+  font-size: 16px;
+}
+
+.telemetry-dialog small {
+  color: #718071;
+}
+
+.telemetry-table th {
+  width: 45%;
+  text-transform: capitalize;
+}
+
+.telemetry-table td {
+  overflow-wrap: anywhere;
+}
+
+.telemetry-block {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #dfe5dc;
+  border-radius: 8px;
+}
+
+.telemetry-block h4 {
+  margin: 0 0 10px;
+}
+
+.error {
+  color: #b3261e;
+}
+
+@media (max-width: 760px) {
+  .app-header {
+    padding: 12px 16px;
+  }
+
+  .summary-row {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .summary-card {
+    padding: 10px 5px;
+  }
+
+  .summary-card strong {
+    font-size: 22px;
+  }
+
+  .summary-card span,
+  .summary-card small {
+    font-size: 10px;
+  }
+
+  .dashboard {
+    height: calc(100vh - 185px);
+  }
+
+  .sidebar {
+    width: min(260px, 65vw);
+  }
+
+  .details-card {
+    top: 65px;
+    right: 8px;
+    bottom: 8px;
+    width: min(430px, calc(100% - 16px));
+    padding: 14px;
+  }
 }

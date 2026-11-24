@@ -1,14 +1,37 @@
+
 import { useEffect, useState } from 'react'
 import { getReadings } from '../services/api'
 
 const HISTORY_LIMIT = 1000
+export const ACTIVE_TIMEOUT_MS = 10 * 60 * 1000
+
+export function isCollarActive(cow, now = Date.now()) {
+  if (!cow?.created_at) return false
+
+  const timestamp = Date.parse(cow.created_at)
+
+  return (
+    Number.isFinite(timestamp) &&
+    timestamp <= now &&
+    now - timestamp < ACTIVE_TIMEOUT_MS
+  )
+}
 
 function hasValidPosition(reading) {
+  if (reading.latitude == null ||
+      reading.longitude == null) {
+    return false
+  }
+
+  const lat = Number(reading.latitude)
+  const lng = Number(reading.longitude)
+
   return (
-    Number.isFinite(Number(reading.latitude)) &&
-    Number.isFinite(Number(reading.longitude)) &&
-    !(Number(reading.latitude) === 0 &&
-      Number(reading.longitude) === 0)
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    !(lat === 0 && lng === 0) &&
+    lat >= -90 && lat <= 90 &&
+    lng >= -180 && lng <= 180
   )
 }
 
@@ -20,46 +43,51 @@ export function useCowReadings() {
 
   async function loadReadings() {
     try {
-      // Gets the readings used to construct the map history.
       const readings = await getReadings({
         limit: HISTORY_LIMIT,
       })
 
-      const readingsByCollar = new Map()
+      const grouped = new Map()
 
       for (const reading of readings) {
-        const collarId = String(reading.collar_id)
+        const id = String(reading.collar_id)
 
-        if (!readingsByCollar.has(collarId)) {
-          readingsByCollar.set(collarId, [])
+        if (!grouped.has(id)) {
+          grouped.set(id, [])
         }
 
-        if (hasValidPosition(reading)) {
-          readingsByCollar.get(collarId).push(reading)
-        }
+        grouped.get(id).push(reading)
       }
 
       const latestCows = []
       const historyByCollar = {}
 
-      for (const [collarId, collarReadings] of readingsByCollar) {
-        const sortedReadings = collarReadings.sort(
-          (a, b) =>
-            new Date(a.recorded_at) -
-            new Date(b.recorded_at)
+      for (const [id, rows] of grouped) {
+        // Newest database receipt first.
+        rows.sort((a, b) =>
+          new Date(b.created_at) -
+          new Date(a.created_at) ||
+          b.id - a.id
         )
 
-        if (sortedReadings.length === 0) {
-          continue
-        }
+        const latest = rows[0]
 
-        // Ordered oldest to newest for drawing the trail.
-        historyByCollar[collarId] = sortedReadings
-
-        // The newest reading is the current position.
-        latestCows.push(
-          sortedReadings[sortedReadings.length - 1]
+        // Use the most recent valid GPS fix for the
+        // marker, even if the latest packet lacks GPS.
+        const latestPosition = rows.find(
+          hasValidPosition
         )
+
+        latestCows.push({
+          ...latest,
+          latitude: latestPosition?.latitude ?? null,
+          longitude: latestPosition?.longitude ?? null,
+        })
+
+        // Map trail: oldest position to newest.
+        historyByCollar[id] = rows
+          .filter(hasValidPosition)
+          .reverse()
       }
 
       setCows(latestCows)
@@ -75,7 +103,10 @@ export function useCowReadings() {
   useEffect(() => {
     loadReadings()
 
-    const interval = setInterval(loadReadings, 10000)
+    const interval = setInterval(
+      loadReadings,
+      10000
+    )
 
     return () => clearInterval(interval)
   }, [])
