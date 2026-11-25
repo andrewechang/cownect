@@ -61,6 +61,8 @@ static void glyph(char character, uint8_t output[5])
         case 'R': memcpy(output, (uint8_t[]){0x7F,0x09,0x19,0x29,0x46}, 5); break;
         case 'S': memcpy(output, (uint8_t[]){0x46,0x49,0x49,0x49,0x31}, 5); break;
         case 'T': memcpy(output, (uint8_t[]){0x01,0x01,0x7F,0x01,0x01}, 5); break;
+        case 'U': memcpy(output, (uint8_t[]){0x3F,0x40,0x40,0x40,0x3F}, 5); break;
+        case 'V': memcpy(output, (uint8_t[]){0x1F,0x20,0x40,0x20,0x1F}, 5); break;
         case 'W': memcpy(output, (uint8_t[]){0x7F,0x20,0x18,0x20,0x7F}, 5); break;
 
         case '0': memcpy(output, (uint8_t[]){0x3E,0x51,0x49,0x45,0x3E}, 5); break;
@@ -234,6 +236,7 @@ void oled_show_status(uint32_t packet_count,
                       uint32_t capture_id,
                       int rssi_dbm,
                       float snr_db,
+                      uint32_t seconds_since_last_packet,
                       bool has_packet)
 {
     if (!s_oled_ready) {
@@ -245,35 +248,47 @@ void oled_show_status(uint32_t packet_count,
     oled_write_line(0,
                     has_packet ? "PACKET OK" : "WAITING");
 
-    snprintf(line,
-             sizeof(line),
-             "PKT:%lu",
-             (unsigned long)packet_count);
+    if (has_packet) {
+        snprintf(line,
+                sizeof(line),
+                "LAST PACKET:%lus",
+                (unsigned long)seconds_since_last_packet);
+    } else {
+        snprintf(line,
+                sizeof(line),
+                "LAST PACKET:--");
+    }
     oled_write_line(1, line);
 
     snprintf(line,
-             sizeof(line),
-             "ID:%llu",
-             (unsigned long long)collar_id);
+            sizeof(line),
+            "PACKETS RECEIVED:%lu",
+            (unsigned long)packet_count);
     oled_write_line(2, line);
 
     snprintf(line,
-             sizeof(line),
-             "RSSI:%d",
-             rssi_dbm);
+            sizeof(line),
+            "COLLAR ID:%llu",
+            (unsigned long long)collar_id);
     oled_write_line(3, line);
 
     snprintf(line,
-             sizeof(line),
-             "SNR:%.1f",
-             snr_db);
+            sizeof(line),
+            "CAPTURE ID:%lu",
+            (unsigned long)capture_id);
     oled_write_line(4, line);
 
     snprintf(line,
-             sizeof(line),
-             "CAP:%lu",
-             (unsigned long)capture_id);
+            sizeof(line),
+            "RSSI:%d",
+            rssi_dbm);
     oled_write_line(5, line);
-    oled_write_line(6, "");
+
+    snprintf(line,
+            sizeof(line),
+            "SNR:%.1f",
+            snr_db);
+    oled_write_line(6, line);
+
     oled_write_line(7, "");
 }

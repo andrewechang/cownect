@@ -10,4 +10,5 @@ void oled_show_status(uint32_t packet_count,
                       uint32_t capture_id,
                       int rssi_dbm,
                       float snr_db,
+                      uint32_t seconds_since_last_packet,
                       bool has_packet);

@@ -339,13 +339,15 @@ void app_main(void)
     uint32_t last_capture_id = 0;
     int last_rssi = 0;
     float last_snr = 0.0f;
+    uint32_t last_packet_time_ms = 0;
 
     oled_show_status(packet_count,
-                     last_collar_id,
-                     last_capture_id,
-                     last_rssi,
-                     last_snr,
-                     false);
+                 last_collar_id,
+                 last_capture_id,
+                 last_rssi,
+                 last_snr,
+                 0,
+                 false);
 
     ESP_LOGI(TAG,
              "Listening for CowNect LoRa packets");
@@ -358,8 +360,26 @@ void app_main(void)
                                   1000);
 
         if (length <= 0) {
-            continue;
-        }
+    uint32_t now_ms =
+        xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    uint32_t elapsed_seconds = 0;
+
+    if (last_packet_time_ms != 0) {
+        elapsed_seconds =
+            (now_ms - last_packet_time_ms) / 1000;
+    }
+
+    oled_show_status(packet_count,
+                     last_collar_id,
+                     last_capture_id,
+                     last_rssi,
+                     last_snr,
+                     elapsed_seconds,
+                     last_packet_time_ms != 0);
+
+    continue;
+}
 
         // Collar status text (e.g. "GPS waiting, not fix yet"): "CM", version 1, type 0x12, then the text
         if (length > 4 && read_u16(&packet[0]) == TELEMETRY_MAGIC &&
@@ -393,11 +413,14 @@ void app_main(void)
         last_rssi = lora_last_packet_rssi();
         last_snr = lora_last_packet_snr();
 
+        last_packet_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
         oled_show_status(packet_count,
-                         last_collar_id,
-                         last_capture_id,
-                         last_rssi,
-                         last_snr,
-                         true);
+                 last_collar_id,
+                 last_capture_id,
+                 last_rssi,
+                 last_snr,
+                 0,
+                 true);
     }
 }
